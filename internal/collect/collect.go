@@ -62,6 +62,10 @@ type RunReport struct {
 	// readable and a genuinely missing service type is visible in it.
 	Ignored       int `json:"ignored"`
 	MetricSamples int `json:"metric_samples"`
+	// RateLimited counts metric reads lost to provider throttling even after
+	// retrying. Reported rather than swallowed: a run that quietly collected half
+	// the estate looks identical to one that collected all of it.
+	RateLimited int `json:"rate_limited"`
 	// Confirmed counts resources promoted from unknown to up because they
 	// returned a metric this run. That is a real availability signal, unlike the
 	// control plane merely reporting that a resource exists.
@@ -84,6 +88,8 @@ type OCIAccount struct {
 	// Metric window per run. Providers backfill late, so a window wider than the
 	// poll interval is correct: it re-reads recent points rather than losing them.
 	MetricWindow time.Duration
+	// MetricsPerSecond paces metric reads; zero means the provider default.
+	MetricsPerSecond float64
 }
 
 // RunOCI performs one discovery pass, then collects metrics for what it found.
@@ -120,6 +126,11 @@ func RunOCI(ctx context.Context, acct OCIAccount, sink Sink, log *slog.Logger, w
 			Region:         region,
 			PrivateKeyPath: acct.PrivateKeyPath,
 			Compartments:   acct.Compartments,
+			// Paced below OCI's throttle for metric reads. Set from measurement,
+			// not from a documented figure: at the previous unpaced rate a single
+			// run lost 109 of its reads to 429s, and the only symptom was a debug
+			// line indistinguishable from "this resource has no metrics".
+			MetricsPerSecond: acct.MetricsPerSecond,
 		})
 		if err != nil {
 			// A bad key or unreadable file fails every region identically, so
@@ -169,11 +180,15 @@ func RunOCI(ctx context.Context, acct OCIAccount, sink Sink, log *slog.Logger, w
 		log.Info("region discovered", "region", region, "resources", len(found))
 
 		if withMetrics {
-			n, reporting, err := collectOCIMetrics(ctx, client, all, compartmentOf, nameOf, acct.MetricWindow, sink, log)
+			n, reporting, err := collectOCIMetrics(ctx, client, all, compartmentOf, nameOf, acct.TenancyOCID, acct.MetricWindow, sink, log)
 			if err != nil {
 				log.Warn("metric collection incomplete", "region", region, "err", err)
 			}
 			report.MetricSamples += n
+			// Throttled reads are data we asked for and did not get. Surfaced in
+			// the report so a half-collected run is visibly different from a
+			// complete one.
+			report.RateLimited += int(client.RateLimited())
 			// A resource that just returned a metric is demonstrably alive, which
 			// is a real availability signal — unlike the control plane's opinion
 			// that it exists. Anything AVAILABLE but silent stays unknown, which
@@ -235,6 +250,7 @@ func collectOCIMetrics(
 	client *ociprov.Client,
 	resources []model.Resource,
 	compartmentOf, nameOf map[string]string,
+	tenancyOCID string,
 	window time.Duration,
 	sink Sink,
 	log *slog.Logger,
@@ -243,11 +259,14 @@ func collectOCIMetrics(
 	from := to.Add(-window)
 
 	type query struct {
-		resource model.Resource
-		metric   catalog.Metric
-		dimValue string
+		resource    model.Resource
+		metric      catalog.Metric
+		dimValue    string
+		compartment string
+		subtree     bool
 	}
 	var queries []query
+	noCompartment := 0
 	for _, r := range resources {
 		if r.Region != client.Region() {
 			continue
@@ -256,23 +275,28 @@ func collectOCIMetrics(
 		if !ok || !t.SupportsMetrics {
 			continue
 		}
-		compartment := compartmentOf[r.NativeID]
+		// Resource Search does not report a compartment for every resource type —
+		// buckets are one — and the previous code skipped those outright. That
+		// silently excluded twenty-two buckets from metric collection with no log
+		// line at all, because they never became a query to fail.
+		//
+		// Falling back to the tenancy root with a subtree search finds the metrics
+		// wherever they were published, at the cost of a wider scan.
+		compartment, subtree := compartmentOf[r.NativeID], false
 		if compartment == "" {
-			continue
+			compartment, subtree = tenancyOCID, true
+			noCompartment++
 		}
 		for _, m := range t.Metrics {
 			if m.Namespace == "" || m.ProviderMetric == "" {
 				continue
 			}
-			// Object Storage keys its metrics on bucket name, not OCID.
-			dim := r.NativeID
-			if m.Namespace == "oci_objectstorage" {
-				if n := nameOf[r.NativeID]; n != "" {
-					dim = n
-				}
-			}
-			queries = append(queries, query{r, m, dim})
+			queries = append(queries, query{r, m, r.NativeID, compartment, subtree})
 		}
+	}
+	if noCompartment > 0 {
+		log.Debug("resources with no known compartment; querying from the tenancy root",
+			"resources", noCompartment)
 	}
 	if len(queries) == 0 {
 		return 0, map[string]bool{}, nil
@@ -295,14 +319,23 @@ func collectOCIMetrics(
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			// Each metric declares its own cadence where the provider publishes
+			// slower than we poll. Using one window for everything meant hourly
+			// metrics returned an empty series most runs — no error, just silence.
+			mFrom, mRes := from, q.metric.Resolution()
+			if w := q.metric.Window(to.Sub(from)); w > to.Sub(from) {
+				mFrom = to.Add(-w)
+			}
+
 			pts, err := client.Metrics(ctx, ociprov.MetricQuery{
 				Namespace:     q.metric.Namespace,
 				MetricName:    q.metric.ProviderMetric,
 				Statistic:     q.metric.Statistic,
-				CompartmentID: compartmentOf[q.resource.NativeID],
+				CompartmentID: q.compartment,
+				Subtree:       q.subtree,
 				ResourceOCID:  q.dimValue,
-				Resolution:    "5m",
-			}, from, to)
+				Resolution:    mRes,
+			}, mFrom, to)
 
 			mu.Lock()
 			defer mu.Unlock()

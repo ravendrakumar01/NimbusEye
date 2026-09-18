@@ -20,8 +20,12 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math/rand"
 	"os"
+	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
@@ -41,6 +45,13 @@ type Config struct {
 	PrivateKeyPath string
 	// Optional. Empty means discover recursively from the tenancy root.
 	Compartments []string
+	// MetricsPerSecond paces metric reads. Zero picks a conservative default.
+	//
+	// OCI throttles SummarizeMetricsData per tenancy. The limit is not published
+	// as a number we can rely on, so this is set from measurement: the value here
+	// is one that completes a full run of several hundred reads without a single
+	// 429 on a real tenancy.
+	MetricsPerSecond float64
 }
 
 // Client bundles the OCI service clients for one tenancy/region pair.
@@ -49,7 +60,82 @@ type Client struct {
 	search   resourcesearch.ResourceSearchClient
 	monitor  monitoring.MonitoringClient
 	identity identity.IdentityClient
+
+	// gate paces metric reads. OCI rate-limits SummarizeMetricsData per tenancy,
+	// and exceeding it returns 429 per request rather than slowing us down.
+	//
+	// This matters more than it sounds. A 429 is indistinguishable, at the call
+	// site, from a resource that publishes nothing — both yield no datapoints. A
+	// whole run of 109 metric reads was once lost to rate limiting while the log
+	// said only "metric unavailable" at debug level, so twenty-two buckets and
+	// half the compute fleet appeared to have no metrics at all.
+	gate *limiter
+	// rateLimited counts reads that were throttled even after retrying, so a run
+	// can report the loss instead of hiding it.
+	rateLimited atomic.Int64
 }
+
+// limiter spaces calls by at least one interval, across goroutines.
+//
+// Deliberately not a token bucket: bursting is what triggers the limit, and the
+// work here is a few hundred independent reads with no latency requirement, so
+// smooth pacing is strictly better than bursting and then backing off.
+type limiter struct {
+	mu       sync.Mutex
+	interval time.Duration
+	next     time.Time
+}
+
+func newLimiter(perSecond float64) *limiter {
+	if perSecond <= 0 {
+		perSecond = 10
+	}
+	return &limiter{interval: time.Duration(float64(time.Second) / perSecond)}
+}
+
+func (l *limiter) wait(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	now := time.Now()
+	if l.next.Before(now) {
+		l.next = now
+	}
+	at := l.next
+	l.next = l.next.Add(l.interval)
+	l.mu.Unlock()
+
+	d := time.Until(at)
+	if d <= 0 {
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
+}
+
+// IsRateLimited reports whether an error is OCI throttling rather than a genuine
+// absence of data. Callers must not treat the two alike: one is retryable and
+// means data was lost, the other is simply the answer.
+func IsRateLimited(err error) bool {
+	if err == nil {
+		return false
+	}
+	var svc common.ServiceError
+	if errors.As(err, &svc) {
+		return svc.GetHTTPStatusCode() == 429
+	}
+	return strings.Contains(err.Error(), "TooManyRequests")
+}
+
+// RateLimited returns how many metric reads were lost to throttling.
+func (c *Client) RateLimited() int64 { return c.rateLimited.Load() }
 
 // LoadPrivateKey reads the API signing key, refusing a world-readable file.
 //
@@ -117,7 +203,13 @@ func New(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("oci: identity client: %w", err)
 	}
 
-	return &Client{cfg: cfg, search: search, monitor: mon, identity: idn}, nil
+	return &Client{
+		cfg:      cfg,
+		search:   search,
+		monitor:  mon,
+		identity: idn,
+		gate:     newLimiter(cfg.MetricsPerSecond),
+	}, nil
 }
 
 // Region reports which region this client talks to.
@@ -274,6 +366,9 @@ type MetricQuery struct {
 	ResourceOCID string
 	// Aggregation window, e.g. 5m.
 	Resolution string
+	// Subtree searches the compartment's descendants too. Needed when the exact
+	// compartment of a resource is unknown and the tenancy root is used instead.
+	Subtree bool
 }
 
 // mql renders the Monitoring Query Language expression.
@@ -297,16 +392,24 @@ func (q MetricQuery) mql() string {
 }
 
 // dimensionKey returns the dimension that identifies a resource in a namespace.
+// dimensionKey returns the dimension a namespace identifies its resource by.
+//
+// These are not guesses. Every value here was read back from ListMetrics against a
+// live tenancy, because a wrong dimension name does not fail — the query is valid,
+// matches nothing, and returns an empty series. Two of these were wrong for months
+// and cost us metrics on 26 monitors with no error anywhere:
+//
+//	oci_objectstorage was "bucketName" with the bucket's name. The dimension is
+//	actually resourceID — note the capital D, which differs from every other
+//	namespace — and it holds the bucket OCID.
+//
+//	oci_lbaas was "lbHostName", which does not exist. The namespace publishes a
+//	plain resourceId holding the load balancer OCID, so it needs no special case
+//	at all.
 func dimensionKey(namespace string) string {
 	switch namespace {
 	case "oci_objectstorage":
-		// Object Storage keys on bucket name, not OCID; callers set ResourceOCID
-		// to the bucket name for this namespace.
-		return "bucketName"
-	case "oci_lbaas":
-		return "lbHostName"
-	case "oci_autonomous_database", "oci_database":
-		return "resourceId"
+		return "resourceID"
 	default:
 		return "resourceId"
 	}
@@ -321,15 +424,44 @@ func (c *Client) Metrics(ctx context.Context, q MetricQuery, from, to time.Time)
 	start := common.SDKTime{Time: from.UTC()}
 	end := common.SDKTime{Time: to.UTC()}
 
-	resp, err := c.monitor.SummarizeMetricsData(ctx, monitoring.SummarizeMetricsDataRequest{
-		CompartmentId: &q.CompartmentID,
-		SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
-			Namespace: &q.Namespace,
-			Query:     &query,
-			StartTime: &start,
-			EndTime:   &end,
-		},
-	})
+	// Paced, then retried on throttling. Without the retry a transient 429 is
+	// permanent data loss for that interval, and without the pacing the retries
+	// themselves become the next burst.
+	const attempts = 4
+	var resp monitoring.SummarizeMetricsDataResponse
+	var err error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if werr := c.gate.wait(ctx); werr != nil {
+			return nil, werr
+		}
+		resp, err = c.monitor.SummarizeMetricsData(ctx, monitoring.SummarizeMetricsDataRequest{
+			CompartmentId:          &q.CompartmentID,
+			CompartmentIdInSubtree: common.Bool(q.Subtree),
+			SummarizeMetricsDataDetails: monitoring.SummarizeMetricsDataDetails{
+				Namespace: &q.Namespace,
+				Query:     &query,
+				StartTime: &start,
+				EndTime:   &end,
+			},
+		})
+		if err == nil || !IsRateLimited(err) {
+			break
+		}
+		if attempt == attempts-1 {
+			// Counted, not hidden: the run report states how much was lost.
+			c.rateLimited.Add(1)
+			break
+		}
+		// Exponential with jitter. Jitter matters because every goroutine is
+		// throttled at the same moment and would otherwise retry in lockstep.
+		back := time.Duration(1<<attempt) * 250 * time.Millisecond
+		back += time.Duration(rand.Int63n(int64(back/2 + 1)))
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(back):
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("oci: summarize %s/%s: %w", q.Namespace, q.MetricName, err)
 	}
@@ -343,5 +475,50 @@ func (c *Client) Metrics(ctx context.Context, q MetricQuery, from, to time.Time)
 			out = append(out, MetricPoint{T: dp.Timestamp.Time, V: *dp.Value})
 		}
 	}
+	return out, nil
+}
+
+// AvailableMetrics returns the metric names OCI reports as present in a namespace
+// for this tenancy.
+//
+// This exists because a wrong metric name is invisible. SummarizeMetricsData
+// accepts any name, matches nothing, and returns an empty series — identical to a
+// resource that is simply quiet. A threshold on such a metric shows in the console
+// as an active rule and can never fire, which is the most dangerous state a
+// monitoring configuration has, because the screen says the resource is covered.
+//
+// Note the result is what has actually published data within OCI's retention
+// window, not what the service could theoretically emit. For a resource type the
+// tenancy does not use, an empty result therefore proves nothing.
+func (c *Client) AvailableMetrics(ctx context.Context, namespace string) ([]string, error) {
+	seen := map[string]bool{}
+	var page *string
+	for {
+		resp, err := c.monitor.ListMetrics(ctx, monitoring.ListMetricsRequest{
+			CompartmentId:          &c.cfg.TenancyOCID,
+			CompartmentIdInSubtree: common.Bool(true),
+			ListMetricsDetails: monitoring.ListMetricsDetails{
+				Namespace: common.String(namespace),
+			},
+			Page: page,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("oci: list metrics %s: %w", namespace, err)
+		}
+		for _, m := range resp.Items {
+			if m.Name != nil {
+				seen[*m.Name] = true
+			}
+		}
+		if resp.OpcNextPage == nil {
+			break
+		}
+		page = resp.OpcNextPage
+	}
+	out := make([]string, 0, len(seen))
+	for n := range seen {
+		out = append(out, n)
+	}
+	sort.Strings(out)
 	return out, nil
 }

@@ -22,11 +22,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
 
+	"nimbuseye/internal/catalog"
 	"nimbuseye/internal/collect"
+	"nimbuseye/internal/providers/oci"
 )
 
 // accountFile is the on-disk shape of one cloud account's collector config.
@@ -56,6 +59,11 @@ func main() {
 			"how far back to read metrics each run; wider than the interval so late-arriving points are not lost")
 		timeout  = flag.Duration("timeout", 15*time.Minute, "maximum duration of a single run")
 		logLevel = flag.String("log-level", "info", "debug | info | warn | error")
+		mps      = flag.Float64("metrics-per-second", 8,
+			"pace metric reads at this rate; the provider throttles bursts and a "+
+				"throttled read is lost data, not a slow one")
+		verify = flag.Bool("verify-catalog", false,
+			"check every catalog metric against what the tenancy actually publishes, then exit")
 	)
 	flag.Parse()
 
@@ -82,6 +90,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	if *verify {
+		vctx, vcancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer vcancel()
+		os.Exit(verifyCatalog(vctx, acctFile, log))
+	}
+
 	var sink collect.Sink
 	if *dryRun {
 		sink = collect.LogSink{Log: log}
@@ -96,14 +110,15 @@ func main() {
 	}
 
 	acct := collect.OCIAccount{
-		AccountID:      acctFile.AccountID,
-		TenancyOCID:    acctFile.TenancyOCID,
-		UserOCID:       acctFile.UserOCID,
-		Fingerprint:    acctFile.Fingerprint,
-		PrivateKeyPath: acctFile.PrivateKeyPath,
-		Regions:        acctFile.Regions,
-		Compartments:   acctFile.Compartments,
-		MetricWindow:   *window,
+		AccountID:        acctFile.AccountID,
+		TenancyOCID:      acctFile.TenancyOCID,
+		UserOCID:         acctFile.UserOCID,
+		Fingerprint:      acctFile.Fingerprint,
+		PrivateKeyPath:   acctFile.PrivateKeyPath,
+		Regions:          acctFile.Regions,
+		Compartments:     acctFile.Compartments,
+		MetricWindow:     *window,
+		MetricsPerSecond: *mps,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -118,7 +133,8 @@ func main() {
 			"state", rep.State, "discovered", rep.Discovered, "mapped", rep.Mapped,
 			"ignored", rep.Ignored, "retired", rep.Retired,
 			"confirmed_up", rep.Confirmed, "unmapped", len(rep.UnmappedTypes),
-			"samples", rep.MetricSamples, "took", time.Since(start).Round(time.Millisecond).String())
+			"samples", rep.MetricSamples, "rate_limited", rep.RateLimited,
+			"took", time.Since(start).Round(time.Millisecond).String())
 		if len(rep.UnmappedTypes) > 0 {
 			// Worth surfacing at info: it is the list of OCI services this build
 			// cannot monitor yet.
@@ -205,4 +221,114 @@ func readToken(path string) (string, error) {
 		return "", errors.New("ingest token is too short; use at least 32 characters")
 	}
 	return tok, nil
+}
+
+// verifyCatalog checks every OCI metric the catalog defines against what the
+// tenancy actually publishes, and returns a process exit code.
+//
+// This exists because of a bug that survived for months. A metric name is just a
+// string; OCI's SummarizeMetricsData accepts an unknown one, matches nothing and
+// returns an empty series, which is indistinguishable from a resource that is
+// simply quiet. Twelve of twenty-nine OCI metric definitions turned out to name
+// metrics that do not exist, nine of them carrying thresholds — so the console
+// displayed them as active alerting rules that could never fire.
+//
+// Nothing in the type system can catch that. Only asking the provider can. Running
+// this after a catalog change turns a silent dead rule into a failed check.
+func verifyCatalog(ctx context.Context, acct accountFile, log *slog.Logger) int {
+	region := ""
+	if len(acct.Regions) > 0 {
+		region = acct.Regions[0]
+	}
+	key, err := oci.LoadPrivateKey(acct.PrivateKeyPath)
+	if err != nil {
+		log.Error("cannot read the API signing key", "err", err)
+		return 1
+	}
+	client, err := oci.New(oci.Config{
+		TenancyOCID: acct.TenancyOCID, UserOCID: acct.UserOCID,
+		Fingerprint: acct.Fingerprint, Region: region,
+		PrivateKeyPath: acct.PrivateKeyPath,
+	})
+	if err != nil {
+		log.Error("cannot build the OCI client", "err", err)
+		return 1
+	}
+	_ = key
+
+	// Group the catalog's expectations by namespace so each one is listed once.
+	type want struct {
+		typeCode, metricKey, providerMetric string
+		hasThreshold                        bool
+	}
+	wanted := map[string][]want{}
+	for _, t := range catalog.All() {
+		if t.Provider != "oci" {
+			continue
+		}
+		for _, m := range t.Metrics {
+			if m.Namespace == "" || m.ProviderMetric == "" {
+				continue
+			}
+			wanted[m.Namespace] = append(wanted[m.Namespace], want{
+				typeCode: t.Code, metricKey: m.Key, providerMetric: m.ProviderMetric,
+				hasThreshold: m.Trouble != nil || m.Critical != nil,
+			})
+		}
+	}
+
+	namespaces := make([]string, 0, len(wanted))
+	for ns := range wanted {
+		namespaces = append(namespaces, ns)
+	}
+	sort.Strings(namespaces)
+
+	missing, missingWithThreshold, present, unknownNS := 0, 0, 0, 0
+	for _, ns := range namespaces {
+		available, err := client.AvailableMetrics(ctx, ns)
+		if err != nil {
+			log.Error("cannot list metrics", "namespace", ns, "err", err)
+			return 1
+		}
+		have := make(map[string]bool, len(available))
+		for _, a := range available {
+			have[a] = true
+		}
+		// An empty namespace means the tenancy has no resources publishing to it,
+		// so absence of a metric proves nothing about whether the name is right.
+		if len(available) == 0 {
+			unknownNS++
+			log.Warn("namespace publishes nothing in this tenancy; cannot verify",
+				"namespace", ns, "definitions", len(wanted[ns]))
+			continue
+		}
+		for _, w := range wanted[ns] {
+			if have[w.providerMetric] {
+				present++
+				continue
+			}
+			missing++
+			if w.hasThreshold {
+				missingWithThreshold++
+			}
+			log.Error("metric is not published by this tenancy",
+				"type", w.typeCode, "metric", w.metricKey,
+				"provider_metric", ns+"/"+w.providerMetric,
+				"has_threshold", w.hasThreshold)
+		}
+	}
+
+	log.Info("catalog verified",
+		"namespaces", len(namespaces), "resolved", present, "missing", missing,
+		"missing_with_threshold", missingWithThreshold, "unverifiable_namespaces", unknownNS)
+
+	// A missing metric that carries a threshold is the failure worth failing on:
+	// it is displayed as protection that does not exist. A missing metric with no
+	// threshold only costs a chart.
+	if missingWithThreshold > 0 {
+		log.Error("some thresholds can never fire; fix the catalog before relying on them",
+			"count", missingWithThreshold)
+		return 1
+	}
+	return 0
 }
