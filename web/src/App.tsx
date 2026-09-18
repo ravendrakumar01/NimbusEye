@@ -1,0 +1,282 @@
+import { useCallback, useEffect, useState } from "react";
+import { Navigate, Route, Routes, useNavigate } from "react-router-dom";
+import { api, setUnauthenticatedHandler } from "./lib/api";
+import type { AuthUser } from "./lib/api";
+import { useAsync } from "./lib/hooks";
+import { Splash } from "./components/Splash";
+import { Spinner } from "./components/ui";
+import { Login } from "./pages/Login";
+import { ResetPassword } from "./pages/ResetPassword";
+import { AuthProvider } from "./lib/auth";
+import { Shell } from "./components/Shell";
+import { MonitorStatus } from "./pages/MonitorStatus";
+import { Alarms } from "./pages/Alarms";
+import { ResourceDetail } from "./pages/ResourceDetail";
+import { AdminCloudAccounts } from "./pages/AdminCloudAccounts";
+import { AddMonitor } from "./pages/AddMonitor";
+import { GettingStarted } from "./pages/GettingStarted";
+import { CloudAccountDetail } from "./pages/CloudAccountDetail";
+import { Placeholder } from "./pages/Placeholder";
+
+/**
+ * Minimum time the boot splash stays on screen.
+ *
+ * The requests it waits for settle in roughly 300ms, which is too brief to
+ * register — the screen appeared and vanished before it could be read. Matched to
+ * one full cycle of the glyph animation so the ripple completes rather than being
+ * cut off mid-way.
+ *
+ * The splash never shows for *less* than the real work takes; this only stops it
+ * being a flash when the work is fast.
+ */
+const MIN_SPLASH_MS = 1400;
+
+export default function App() {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [checked, setChecked] = useState(false);
+  // Held over the whole viewport after sign-in. The splash has to live above the
+  // router: rendered inside a route it appears in the content area with the rail
+  // and top bar around it, which is not a boot screen.
+  const [booting, setBooting] = useState(false);
+  const navigate = useNavigate();
+
+  const signOutLocally = useCallback(() => setUser(null), []);
+
+  // A 401 from anywhere drops back to the login screen, so an expired session does
+  // not leave a shell full of failing requests.
+  useEffect(() => {
+    setUnauthenticatedHandler(signOutLocally);
+  }, [signOutLocally]);
+
+  // Asked once on load: a page refresh must not require signing in again.
+  useEffect(() => {
+    let cancelled = false;
+    const startedAt = Date.now();
+    api
+      .session()
+      .then((s) => {
+        if (!cancelled) setUser(s.authenticated && s.user ? s.user : null);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        // Held to the same minimum as the post-login splash, so a refresh does not
+        // flash the wordmark for 200ms.
+        const remaining = MIN_SPLASH_MS - (Date.now() - startedAt);
+        if (remaining > 0) {
+          window.setTimeout(() => {
+            if (!cancelled) setChecked(true);
+          }, remaining);
+        } else {
+          setChecked(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The session check is the first thing that happens and gates everything, so
+  // this is the splash the reference console shows at the same point.
+  if (!checked) return <Splash />;
+  // The reset link is followed by someone who cannot sign in, so it is handled
+  // before the auth gate.
+  if (window.location.pathname === "/reset") {
+    return <ResetPassword onDone={() => window.location.replace("/")} />;
+  }
+
+  if (!user) {
+    return (
+      <Login
+        onSignedIn={(u) => {
+          setUser(u);
+          setBooting(true);
+          // Navigate explicitly rather than flagging state for the landing route to
+          // interpret. An earlier attempt did the latter and consumed the flag in an
+          // effect that ran during the loading render, so it was always false by the
+          // time it was read. This also puts /getting-started in the address bar,
+          // which matches the console being followed and makes the page linkable.
+          navigate("/getting-started", { replace: true });
+
+          // Warm the two requests the landing page needs, then hold the splash for
+          // whichever is longer: the real work, or the minimum above.
+          const startedAt = Date.now();
+          void Promise.allSettled([api.summary(), api.accounts()]).then(() => {
+            const remaining = MIN_SPLASH_MS - (Date.now() - startedAt);
+            if (remaining > 0) {
+              window.setTimeout(() => setBooting(false), remaining);
+            } else {
+              setBooting(false);
+            }
+          });
+        }}
+      />
+    );
+  }
+
+  if (booting) return <Splash />;
+
+  return (
+    <AuthProvider value={{ user, signOut: signOutLocally }}>
+    <Routes>
+      <Route element={<Shell />}>
+        {/* Home, Cloud, Web and Kubernetes are the same Monitor Status page at
+            different scopes, exactly as in the console being replicated. */}
+        {/* Landing: Monitor Status normally, Getting Started while the estate is
+            empty. An empty monitor list answers "what do I do first" badly. */}
+        <Route index element={<Landing />} />
+        <Route path="getting-started" element={<GettingStarted />} />
+        <Route
+          path="cloud"
+          element={
+            <MonitorStatus providers={["oci", "aws", "azure", "gcp"]} providerFromUrl />
+          }
+        />
+        <Route path="web" element={<MonitorStatus providers={["synthetic"]} />} />
+        <Route path="kubernetes" element={<MonitorStatus providers={["k8s"]} />} />
+
+        <Route path="alarms" element={<Alarms />} />
+
+        {/* Monitor detail, reachable from any list */}
+        <Route path="monitor/:id" element={<ResourceDetail />} />
+        <Route path="add-monitor" element={<AddMonitor />} />
+
+        <Route
+          path="kubernetes/help"
+          element={
+            <Placeholder
+              title="Help Assistant"
+              summary="Onboarding cards for Kubernetes, Docker, server and plugin monitoring."
+              planned={[
+                "Add a Kubernetes monitor via an in-cluster agent manifest",
+                "Docker container monitoring",
+                "Server agent install for Linux and Windows",
+                "Plugin integrations",
+              ]}
+            />
+          }
+        />
+        <Route
+          path="apm"
+          element={
+            <Placeholder
+              title="APM"
+              summary="Application performance monitoring: traces, transactions and real user monitoring. Not started."
+              planned={[
+                "Application and instance inventory",
+                "Transaction traces with slow-query attribution",
+                "Real user monitoring by geography and browser",
+                "Error and exception tracking",
+              ]}
+            />
+          }
+        />
+        <Route
+          path="server"
+          element={
+            <Placeholder
+              title="Server"
+              summary="Agent-based server monitoring. Needs an agent build and an install flow, which is a separate piece of work from cloud API polling."
+              planned={[
+                "Linux and Windows agent with a device-key install command",
+                "60+ host metrics at one-minute frequency",
+                "Process, service, file and directory checks",
+                "AppLogs ingestion",
+              ]}
+            />
+          }
+        />
+        <Route
+          path="groups"
+          element={
+            <Placeholder
+              title="Monitor Groups"
+              summary="Grouping and health rollup. The schema supports rule-matched dynamic membership, which is what keeps groups accurate at 2000 resources."
+              planned={[
+                "Nested groups and subgroups",
+                "Rule-based dynamic membership by tag, account or type",
+                "Worst-child, percentage and count rollup strategies",
+                "Group-level threshold and notification defaults",
+              ]}
+            />
+          }
+        />
+        <Route
+          path="outages"
+          element={
+            <Placeholder
+              title="Outages"
+              summary="Outage history is already generated by the API and stored per resource; this view is not built yet."
+              planned={[
+                "Open and closed outages with duration and MTTR",
+                "Reclassify an outage as maintenance or false positive",
+                "Root-cause annotation and comments",
+                "Exclusion from SLA when inside a maintenance window",
+              ]}
+            />
+          }
+        />
+        <Route
+          path="reports"
+          element={
+            <Placeholder
+              title="Reports"
+              summary="Availability and performance reporting computed from daily rollup tables, so a year of history stays fast to query."
+              planned={[
+                "Availability summary by resource, group, type and tag",
+                "SLA reports with business-hours awareness and maintenance exclusion",
+                "Top-N and Bottom-N by any metric",
+                "Forecast and health trend",
+                "Scheduled email delivery",
+              ]}
+            />
+          }
+        />
+        {/* Admin landing goes straight to cloud accounts: it is the only Admin
+            area that is actually implemented. */}
+        <Route path="admin" element={<Navigate to="/admin/cloud-accounts" replace />} />
+        <Route path="admin/cloud-accounts" element={<AdminCloudAccounts />} />
+        <Route path="admin/cloud-accounts/:id" element={<CloudAccountDetail />} />
+
+        <Route path="admin/add-monitor" element={<Navigate to="/add-monitor" replace />} />
+
+        <Route
+          path="finops"
+          element={
+            <Placeholder
+              title="Nimbus FinOps"
+              summary="Cost analysis across all four clouds, built on billing exports rather than metric APIs. The database schema exists; the ingest pipeline does not."
+              planned={[
+                "Daily spend by provider, service, region and tag",
+                "Cost centres with tag-based allocation rules for showback",
+                "Budgets with forecast-based breach alerts",
+                "Amortised versus list cost, so commitment savings are visible",
+                "Untagged and idle resource reporting",
+              ]}
+            />
+          }
+        />
+
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Route>
+    </Routes>
+    </AuthProvider>
+  );
+}
+
+/**
+ * Landing at "/" shows the monitor list, or onboarding while the estate is empty.
+ *
+ * Sign-in navigates straight to /getting-started, so this only decides what a
+ * later visit to "/" shows.
+ */
+function Landing() {
+  const summary = useAsync(() => api.summary(), []);
+  if (summary.initialLoading) return <Spinner label="Loading monitors" />;
+  // On error, show the monitor list rather than onboarding: a failed request is
+  // not evidence that the estate is empty.
+  if (summary.error) return <MonitorStatus />;
+  return (summary.data?.total ?? 0) === 0 ? <GettingStarted /> : <MonitorStatus />;
+}

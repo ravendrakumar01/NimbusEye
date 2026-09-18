@@ -1,0 +1,67 @@
+[Unit]
+Description=NimbusEye API
+Documentation=file:/opt/nimbuseye/README.md
+After=network-online.target postgresql.service
+Wants=network-online.target
+Requires=postgresql.service
+
+# Restart rate limit. These belong in [Unit]: systemd ignores them in
+# [Service] without failing, so a unit that looks rate-limited is not.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=nimbuseye
+Group=nimbuseye
+
+# DSN and the ingest token live here, mode 640 root:nimbuseye. Passing them as
+# flags would put them in `ps` output for every user on the box.
+EnvironmentFile=/etc/nimbuseye/nimbuseye.env
+
+# Bound to loopback: nginx is the only thing that should reach it. Exposing the
+# API port directly would bypass TLS, the security headers and the rate limits.
+ExecStart=/opt/nimbuseye/bin/nimbuseye-api \
+    --addr 127.0.0.1:8080 \
+    --ingest-token-file /etc/nimbuseye/ingest.token \
+    --log-level info
+
+Restart=always
+RestartSec=3
+# Give up after repeated rapid failures rather than looping forever on a bad
+# config; the unit then shows as failed instead of pretending to run.
+
+# --- Hardening -------------------------------------------------------------
+# This process holds read access to an entire cloud estate, so it gets no more
+# of the host than it needs.
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+# Only outbound TCP to PostgreSQL and inbound from nginx are needed.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+
+# Nothing on disk is written by the API.
+ReadOnlyPaths=/opt/nimbuseye /etc/nimbuseye
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,120 @@
+@import "tailwindcss";
+
+/* NimbusEye design tokens.
+   The status palette is the most important decision in this file: an operator
+   reads colour before text, so each state must be distinguishable at a glance
+   and remain distinguishable for the ~8% of men with red-green colour vision
+   deficiency. Severity is therefore also encoded by shape and label everywhere
+   it appears, never by colour alone. */
+@theme {
+  /* Icon rail: near-black with a green cast, matching the console being
+     replicated. The active item lightens and its icon/label turn green. */
+  --color-rail: #0c1f15;
+  --color-rail-hover: #14301f;
+  --color-rail-active: #17351f;
+  --color-rail-text: #dfe6e0;
+  --color-rail-muted: #9aa8a0;
+  --color-rail-accent: #4caf50;
+
+  /* Context panel: the second, wider sidebar. */
+  --color-panel: #1d1d1d;
+  --color-panel-hover: #2a2a2a;
+  --color-panel-active: #3a3a3a;
+  --color-panel-border: #2e2e2e;
+  --color-panel-text: #e4e4e4;
+  --color-panel-muted: #9b9b9b;
+  /* Alarms uses a warmer selection tint than the neutral one elsewhere. */
+  --color-panel-warm: #4d3232;
+
+  --color-brand-50: #eef6ff;
+  --color-brand-100: #d9eaff;
+  --color-brand-400: #4d9bf0;
+  --color-brand-500: #1565c0;
+  --color-brand-600: #1259ab;
+  --color-brand-700: #0f4a8f;
+
+  /* Primary action green. */
+  --color-go-500: #2e8b46;
+  --color-go-600: #276f39;
+
+  --color-st-down: #d93025;
+  --color-st-down-bg: #fdecea;
+  --color-st-critical: #ef8c00;
+  --color-st-critical-bg: #fdf3e4;
+  --color-st-trouble: #e0c000;
+  --color-st-trouble-bg: #fdfae4;
+  --color-st-up: #1e9e58;
+  --color-st-up-bg: #e9f7ef;
+  --color-st-maintenance: #2a72c5;
+  --color-st-maintenance-bg: #eaf2fc;
+  --color-st-suspended: #6b7280;
+  --color-st-suspended-bg: #f1f3f5;
+  --color-st-discovery: #7c53c3;
+  --color-st-discovery-bg: #f3eefb;
+  --color-st-unknown: #94a3b8;
+  --color-st-unknown-bg: #f1f5f9;
+  --color-st-anomaly: #e05270;
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-slate-800 antialiased;
+  font-family: var(--font-sans);
+}
+
+/* Tabular numerals stop metric columns from jittering as values change. */
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Thin scrollbars inside dense panels, without hiding them entirely — an
+   invisible scrollbar makes long lists feel truncated. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-slate-300) transparent;
+}
+.scroll-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.scroll-thin::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-slate-300;
+}
+
+/* Visible keyboard focus. Removing outlines makes the app unusable without a
+   mouse, so focus is restyled rather than suppressed. */
+*:focus-visible {
+  @apply outline-2 outline-offset-1 outline-brand-500;
+}
+
+/* Boot splash glyph pulse. Subtle on purpose: it should read as "starting", not
+   demand attention. Disabled by the reduced-motion rule below. */
+@keyframes nimbus-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.92);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

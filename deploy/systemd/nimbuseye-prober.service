@@ -1,0 +1,50 @@
+[Unit]
+Description=NimbusEye prober (websites, ports, DNS, TLS)
+After=network-online.target postgresql.service nimbuseye-api.service
+Wants=network-online.target
+Requires=postgresql.service
+
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=nimbuseye
+Group=nimbuseye
+EnvironmentFile=/etc/nimbuseye/nimbuseye.env
+
+# The interval here is only how often the prober looks for work; each monitor's
+# own check_interval_sec governs how often it is actually checked.
+ExecStart=/opt/nimbuseye/bin/nimbuseye-prober --interval 30s --concurrency 20 --log-level info
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+ReadOnlyPaths=/opt/nimbuseye /etc/nimbuseye
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,55 @@
+[Unit]
+Description=NimbusEye collector for %i
+After=network-online.target nimbuseye-api.service
+Wants=network-online.target
+
+# Restart rate limit. These belong in [Unit]: systemd ignores them in
+# [Service] without failing, so a unit that looks rate-limited is not.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=nimbuseye
+Group=nimbuseye
+EnvironmentFile=/etc/nimbuseye/nimbuseye.env
+
+ExecStart=/opt/nimbuseye/bin/nimbuseye-collector \
+    --account /etc/nimbuseye/accounts/%i.json \
+    --api http://127.0.0.1:8080 \
+    --ingest-token-file /etc/nimbuseye/ingest.token \
+    --interval 15m \
+    --metric-window 30m \
+    --log-level info
+
+Restart=always
+RestartSec=30
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+ReadOnlyPaths=/opt/nimbuseye /etc/nimbuseye
+
+[Install]
+WantedBy=multi-user.target

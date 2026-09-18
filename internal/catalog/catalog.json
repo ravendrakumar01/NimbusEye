@@ -1,0 +1,1606 @@
+[
+ {
+  "code": "OCI_COMPUTE_INSTANCE",
+  "provider": "oci",
+  "category": "compute",
+  "display_name": "Compute Instance",
+  "icon": "server",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "CpuUtilization",
+    "namespace": "oci_computeagent",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "memory_utilization",
+    "label": "Memory Utilization",
+    "unit": "percent",
+    "provider_metric": "MemoryUtilization",
+    "namespace": "oci_computeagent",
+    "statistic": "mean",
+    "trouble": 80,
+    "critical": 92,
+    "higher_is_worse": true
+   },
+   {
+    "key": "disk_utilization",
+    "label": "Disk Utilization",
+    "unit": "percent",
+    "provider_metric": "DiskUtilization",
+    "namespace": "oci_computeagent",
+    "statistic": "max",
+    "trouble": 80,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "network_bytes_in",
+    "label": "Network In",
+    "unit": "bytes_per_sec",
+    "provider_metric": "NetworksBytesIn",
+    "namespace": "oci_computeagent",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "network_bytes_out",
+    "label": "Network Out",
+    "unit": "bytes_per_sec",
+    "provider_metric": "NetworksBytesOut",
+    "namespace": "oci_computeagent",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "load_average",
+    "label": "Load Average",
+    "unit": "count",
+    "provider_metric": "LoadAverage",
+    "namespace": "oci_computeagent",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "OCI_BLOCK_VOLUME",
+  "provider": "oci",
+  "category": "storage",
+  "display_name": "Block Volume",
+  "icon": "disk",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "read_throughput",
+    "label": "Read Throughput",
+    "unit": "bytes_per_sec",
+    "provider_metric": "VolumeReadThroughput",
+    "namespace": "oci_blockstore",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "write_throughput",
+    "label": "Write Throughput",
+    "unit": "bytes_per_sec",
+    "provider_metric": "VolumeWriteThroughput",
+    "namespace": "oci_blockstore",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "guaranteed_vpus",
+    "label": "Guaranteed VPUs",
+    "unit": "count",
+    "provider_metric": "VolumeGuaranteedVPUsPerGB",
+    "namespace": "oci_blockstore",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": false
+   }
+  ]
+ },
+ {
+  "code": "OCI_OBJECT_STORAGE_BUCKET",
+  "provider": "oci",
+  "category": "storage",
+  "display_name": "Object Storage Bucket",
+  "icon": "bucket",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 900,
+  "metrics": [
+   {
+    "key": "bucket_size",
+    "label": "Bucket Size",
+    "unit": "bytes",
+    "provider_metric": "StoredBytes",
+    "namespace": "oci_objectstorage",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "object_count",
+    "label": "Object Count",
+    "unit": "count",
+    "provider_metric": "ObjectCount",
+    "namespace": "oci_objectstorage",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "all_requests",
+    "label": "All Requests",
+    "unit": "ops_per_sec",
+    "provider_metric": "AllRequests",
+    "namespace": "oci_objectstorage",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "client_errors",
+    "label": "Client Errors (4xx)",
+    "unit": "count",
+    "provider_metric": "ClientErrors",
+    "namespace": "oci_objectstorage",
+    "statistic": "sum",
+    "trouble": 10,
+    "critical": 50,
+    "higher_is_worse": true
+   },
+   {
+    "key": "server_errors",
+    "label": "Server Errors (5xx)",
+    "unit": "count",
+    "provider_metric": "ServerErrors",
+    "namespace": "oci_objectstorage",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 5,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "OCI_AUTONOMOUS_DB",
+  "provider": "oci",
+  "category": "database",
+  "display_name": "Autonomous Database",
+  "icon": "database",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "CpuUtilization",
+    "namespace": "oci_autonomous_database",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "storage_utilization",
+    "label": "Storage Utilization",
+    "unit": "percent",
+    "provider_metric": "StorageUtilization",
+    "namespace": "oci_autonomous_database",
+    "statistic": "max",
+    "trouble": 80,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "sessions",
+    "label": "Sessions",
+    "unit": "count",
+    "provider_metric": "Sessions",
+    "namespace": "oci_autonomous_database",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "execute_count",
+    "label": "Execute Count",
+    "unit": "ops_per_sec",
+    "provider_metric": "ExecuteCount",
+    "namespace": "oci_autonomous_database",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "apply_lag",
+    "label": "Apply Lag",
+    "unit": "seconds",
+    "provider_metric": "ApplyLag",
+    "namespace": "oci_autonomous_database",
+    "statistic": "max",
+    "trouble": 60,
+    "critical": 300,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "OCI_DB_SYSTEM",
+  "provider": "oci",
+  "category": "database",
+  "display_name": "DB System",
+  "icon": "database",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "CpuUtilization",
+    "namespace": "oci_database",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "memory_utilization",
+    "label": "Memory Utilization",
+    "unit": "percent",
+    "provider_metric": "MemoryUtilization",
+    "namespace": "oci_database",
+    "statistic": "mean",
+    "trouble": 80,
+    "critical": 92,
+    "higher_is_worse": true
+   },
+   {
+    "key": "storage_used_pct",
+    "label": "Storage Used",
+    "unit": "percent",
+    "provider_metric": "StorageUsedByTableSpace",
+    "namespace": "oci_database",
+    "statistic": "max",
+    "trouble": 80,
+    "critical": 90,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "OCI_LOAD_BALANCER",
+  "provider": "oci",
+  "category": "network",
+  "display_name": "Load Balancer",
+  "icon": "balance",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "active_connections",
+    "label": "Active Connections",
+    "unit": "count",
+    "provider_metric": "ActiveConnections",
+    "namespace": "oci_lbaas",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "backend_health",
+    "label": "Healthy Backends",
+    "unit": "count",
+    "provider_metric": "HealthyBackendServers",
+    "namespace": "oci_lbaas",
+    "statistic": "min",
+    "trouble": 1,
+    "critical": 0,
+    "higher_is_worse": false
+   },
+   {
+    "key": "response_time",
+    "label": "Backend Response Time",
+    "unit": "milliseconds",
+    "provider_metric": "BackendServerResponseTime",
+    "namespace": "oci_lbaas",
+    "statistic": "mean",
+    "trouble": 1000,
+    "critical": 3000,
+    "higher_is_worse": true
+   },
+   {
+    "key": "http_5xx",
+    "label": "HTTP 5xx",
+    "unit": "count",
+    "provider_metric": "HttpResponses5xx",
+    "namespace": "oci_lbaas",
+    "statistic": "sum",
+    "trouble": 5,
+    "critical": 25,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "OCI_OKE_CLUSTER",
+  "provider": "oci",
+  "category": "container",
+  "display_name": "OKE Cluster",
+  "icon": "kubernetes",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "OCI_FUNCTION",
+  "provider": "oci",
+  "category": "serverless",
+  "display_name": "Function",
+  "icon": "function",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "invocations",
+    "label": "Invocations",
+    "unit": "count",
+    "provider_metric": "FunctionInvocationCount",
+    "namespace": "oci_faas",
+    "statistic": "sum",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "errors",
+    "label": "Errors",
+    "unit": "count",
+    "provider_metric": "FunctionErrorCount",
+    "namespace": "oci_faas",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 10,
+    "higher_is_worse": true
+   },
+   {
+    "key": "duration",
+    "label": "Duration",
+    "unit": "milliseconds",
+    "provider_metric": "FunctionExecutionDuration",
+    "namespace": "oci_faas",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "OCI_VCN",
+  "provider": "oci",
+  "category": "network",
+  "display_name": "Virtual Cloud Network",
+  "icon": "network",
+  "supports_availability": false,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 900,
+  "metrics": []
+ },
+ {
+  "code": "OCI_FILE_STORAGE",
+  "provider": "oci",
+  "category": "storage",
+  "display_name": "File Storage",
+  "icon": "folder",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 900,
+  "metrics": []
+ },
+ {
+  "code": "AWS_EC2_INSTANCE",
+  "provider": "aws",
+  "category": "compute",
+  "display_name": "EC2 Instance",
+  "icon": "server",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "CPUUtilization",
+    "namespace": "AWS/EC2",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "status_check_failed",
+    "label": "Status Check Failed",
+    "unit": "count",
+    "provider_metric": "StatusCheckFailed",
+    "namespace": "AWS/EC2",
+    "statistic": "max",
+    "trouble": 1,
+    "critical": 1,
+    "higher_is_worse": true
+   },
+   {
+    "key": "network_in",
+    "label": "Network In",
+    "unit": "bytes_per_sec",
+    "provider_metric": "NetworkIn",
+    "namespace": "AWS/EC2",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "network_out",
+    "label": "Network Out",
+    "unit": "bytes_per_sec",
+    "provider_metric": "NetworkOut",
+    "namespace": "AWS/EC2",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "ebs_read_ops",
+    "label": "EBS Read Ops",
+    "unit": "ops_per_sec",
+    "provider_metric": "EBSReadOps",
+    "namespace": "AWS/EC2",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "memory_utilization",
+    "label": "Memory Utilization",
+    "unit": "percent",
+    "provider_metric": "mem_used_percent",
+    "namespace": "CWAgent",
+    "statistic": "mean",
+    "trouble": 80,
+    "critical": 92,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AWS_RDS_INSTANCE",
+  "provider": "aws",
+  "category": "database",
+  "display_name": "RDS Instance",
+  "icon": "database",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "CPUUtilization",
+    "namespace": "AWS/RDS",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "free_storage_space",
+    "label": "Free Storage Space",
+    "unit": "bytes",
+    "provider_metric": "FreeStorageSpace",
+    "namespace": "AWS/RDS",
+    "statistic": "min",
+    "trouble": 10737418240,
+    "critical": 2147483648,
+    "higher_is_worse": false
+   },
+   {
+    "key": "freeable_memory",
+    "label": "Freeable Memory",
+    "unit": "bytes",
+    "provider_metric": "FreeableMemory",
+    "namespace": "AWS/RDS",
+    "statistic": "min",
+    "trouble": 536870912,
+    "critical": 134217728,
+    "higher_is_worse": false
+   },
+   {
+    "key": "db_connections",
+    "label": "DB Connections",
+    "unit": "count",
+    "provider_metric": "DatabaseConnections",
+    "namespace": "AWS/RDS",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "read_latency",
+    "label": "Read Latency",
+    "unit": "seconds",
+    "provider_metric": "ReadLatency",
+    "namespace": "AWS/RDS",
+    "statistic": "mean",
+    "trouble": 0.02,
+    "critical": 0.1,
+    "higher_is_worse": true
+   },
+   {
+    "key": "replica_lag",
+    "label": "Replica Lag",
+    "unit": "seconds",
+    "provider_metric": "ReplicaLag",
+    "namespace": "AWS/RDS",
+    "statistic": "max",
+    "trouble": 30,
+    "critical": 300,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AWS_S3_BUCKET",
+  "provider": "aws",
+  "category": "storage",
+  "display_name": "S3 Bucket",
+  "icon": "bucket",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 900,
+  "metrics": [
+   {
+    "key": "bucket_size",
+    "label": "Bucket Size",
+    "unit": "bytes",
+    "provider_metric": "BucketSizeBytes",
+    "namespace": "AWS/S3",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "object_count",
+    "label": "Object Count",
+    "unit": "count",
+    "provider_metric": "NumberOfObjects",
+    "namespace": "AWS/S3",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "5xx_errors",
+    "label": "5xx Errors",
+    "unit": "count",
+    "provider_metric": "5xxErrors",
+    "namespace": "AWS/S3",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 10,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AWS_ALB",
+  "provider": "aws",
+  "category": "network",
+  "display_name": "Application Load Balancer",
+  "icon": "balance",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "target_response_time",
+    "label": "Target Response Time",
+    "unit": "seconds",
+    "provider_metric": "TargetResponseTime",
+    "namespace": "AWS/ApplicationELB",
+    "statistic": "mean",
+    "trouble": 1,
+    "critical": 3,
+    "higher_is_worse": true
+   },
+   {
+    "key": "healthy_hosts",
+    "label": "Healthy Hosts",
+    "unit": "count",
+    "provider_metric": "HealthyHostCount",
+    "namespace": "AWS/ApplicationELB",
+    "statistic": "min",
+    "trouble": 1,
+    "critical": 0,
+    "higher_is_worse": false
+   },
+   {
+    "key": "http_5xx",
+    "label": "HTTP 5xx (Target)",
+    "unit": "count",
+    "provider_metric": "HTTPCode_Target_5XX_Count",
+    "namespace": "AWS/ApplicationELB",
+    "statistic": "sum",
+    "trouble": 5,
+    "critical": 25,
+    "higher_is_worse": true
+   },
+   {
+    "key": "rejected_connections",
+    "label": "Rejected Connections",
+    "unit": "count",
+    "provider_metric": "RejectedConnectionCount",
+    "namespace": "AWS/ApplicationELB",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 10,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AWS_LAMBDA_FUNCTION",
+  "provider": "aws",
+  "category": "serverless",
+  "display_name": "Lambda Function",
+  "icon": "function",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "invocations",
+    "label": "Invocations",
+    "unit": "count",
+    "provider_metric": "Invocations",
+    "namespace": "AWS/Lambda",
+    "statistic": "sum",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "errors",
+    "label": "Errors",
+    "unit": "count",
+    "provider_metric": "Errors",
+    "namespace": "AWS/Lambda",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 10,
+    "higher_is_worse": true
+   },
+   {
+    "key": "duration",
+    "label": "Duration",
+    "unit": "milliseconds",
+    "provider_metric": "Duration",
+    "namespace": "AWS/Lambda",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "throttles",
+    "label": "Throttles",
+    "unit": "count",
+    "provider_metric": "Throttles",
+    "namespace": "AWS/Lambda",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 10,
+    "higher_is_worse": true
+   },
+   {
+    "key": "concurrent_executions",
+    "label": "Concurrent Executions",
+    "unit": "count",
+    "provider_metric": "ConcurrentExecutions",
+    "namespace": "AWS/Lambda",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AWS_EBS_VOLUME",
+  "provider": "aws",
+  "category": "storage",
+  "display_name": "EBS Volume",
+  "icon": "disk",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "burst_balance",
+    "label": "Burst Balance",
+    "unit": "percent",
+    "provider_metric": "BurstBalance",
+    "namespace": "AWS/EBS",
+    "statistic": "min",
+    "trouble": 50,
+    "critical": 20,
+    "higher_is_worse": false
+   },
+   {
+    "key": "queue_length",
+    "label": "Queue Length",
+    "unit": "count",
+    "provider_metric": "VolumeQueueLength",
+    "namespace": "AWS/EBS",
+    "statistic": "mean",
+    "trouble": 10,
+    "critical": 32,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AWS_EKS_CLUSTER",
+  "provider": "aws",
+  "category": "container",
+  "display_name": "EKS Cluster",
+  "icon": "kubernetes",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "AWS_DYNAMODB_TABLE",
+  "provider": "aws",
+  "category": "database",
+  "display_name": "DynamoDB Table",
+  "icon": "database",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "throttled_requests",
+    "label": "Throttled Requests",
+    "unit": "count",
+    "provider_metric": "ThrottledRequests",
+    "namespace": "AWS/DynamoDB",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 10,
+    "higher_is_worse": true
+   },
+   {
+    "key": "consumed_read_capacity",
+    "label": "Consumed Read Capacity",
+    "unit": "count",
+    "provider_metric": "ConsumedReadCapacityUnits",
+    "namespace": "AWS/DynamoDB",
+    "statistic": "sum",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AWS_ELASTICACHE_NODE",
+  "provider": "aws",
+  "category": "database",
+  "display_name": "ElastiCache Node",
+  "icon": "database",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "AWS_NAT_GATEWAY",
+  "provider": "aws",
+  "category": "network",
+  "display_name": "NAT Gateway",
+  "icon": "network",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "AZURE_VM",
+  "provider": "azure",
+  "category": "compute",
+  "display_name": "Virtual Machine",
+  "icon": "server",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "Percentage CPU",
+    "namespace": "Microsoft.Compute/virtualMachines",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "available_memory",
+    "label": "Available Memory",
+    "unit": "bytes",
+    "provider_metric": "Available Memory Bytes",
+    "namespace": "Microsoft.Compute/virtualMachines",
+    "statistic": "min",
+    "trouble": 536870912,
+    "critical": 134217728,
+    "higher_is_worse": false
+   },
+   {
+    "key": "disk_read_bytes",
+    "label": "Disk Read",
+    "unit": "bytes_per_sec",
+    "provider_metric": "Disk Read Bytes",
+    "namespace": "Microsoft.Compute/virtualMachines",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "network_in",
+    "label": "Network In",
+    "unit": "bytes_per_sec",
+    "provider_metric": "Network In Total",
+    "namespace": "Microsoft.Compute/virtualMachines",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AZURE_SQL_DATABASE",
+  "provider": "azure",
+  "category": "database",
+  "display_name": "SQL Database",
+  "icon": "database",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "dtu_consumption",
+    "label": "DTU Consumption",
+    "unit": "percent",
+    "provider_metric": "dtu_consumption_percent",
+    "namespace": "Microsoft.Sql/servers/databases",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "storage_percent",
+    "label": "Storage Used",
+    "unit": "percent",
+    "provider_metric": "storage_percent",
+    "namespace": "Microsoft.Sql/servers/databases",
+    "statistic": "max",
+    "trouble": 80,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "deadlocks",
+    "label": "Deadlocks",
+    "unit": "count",
+    "provider_metric": "deadlock",
+    "namespace": "Microsoft.Sql/servers/databases",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 5,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "AZURE_STORAGE_ACCOUNT",
+  "provider": "azure",
+  "category": "storage",
+  "display_name": "Storage Account",
+  "icon": "bucket",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 900,
+  "metrics": []
+ },
+ {
+  "code": "AZURE_APP_SERVICE",
+  "provider": "azure",
+  "category": "compute",
+  "display_name": "App Service",
+  "icon": "server",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "AZURE_AKS_CLUSTER",
+  "provider": "azure",
+  "category": "container",
+  "display_name": "AKS Cluster",
+  "icon": "kubernetes",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "AZURE_LOAD_BALANCER",
+  "provider": "azure",
+  "category": "network",
+  "display_name": "Load Balancer",
+  "icon": "balance",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "AZURE_FUNCTION_APP",
+  "provider": "azure",
+  "category": "serverless",
+  "display_name": "Function App",
+  "icon": "function",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "GCP_COMPUTE_INSTANCE",
+  "provider": "gcp",
+  "category": "compute",
+  "display_name": "Compute Engine Instance",
+  "icon": "server",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "compute.googleapis.com/instance/cpu/utilization",
+    "namespace": "gce_instance",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "network_received",
+    "label": "Network Received",
+    "unit": "bytes_per_sec",
+    "provider_metric": "compute.googleapis.com/instance/network/received_bytes_count",
+    "namespace": "gce_instance",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "disk_read_bytes",
+    "label": "Disk Read",
+    "unit": "bytes_per_sec",
+    "provider_metric": "compute.googleapis.com/instance/disk/read_bytes_count",
+    "namespace": "gce_instance",
+    "statistic": "rate",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "GCP_CLOUD_SQL",
+  "provider": "gcp",
+  "category": "database",
+  "display_name": "Cloud SQL Instance",
+  "icon": "database",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "cloudsql.googleapis.com/database/cpu/utilization",
+    "namespace": "cloudsql_database",
+    "statistic": "mean",
+    "trouble": 75,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "disk_utilization",
+    "label": "Disk Utilization",
+    "unit": "percent",
+    "provider_metric": "cloudsql.googleapis.com/database/disk/utilization",
+    "namespace": "cloudsql_database",
+    "statistic": "max",
+    "trouble": 80,
+    "critical": 90,
+    "higher_is_worse": true
+   },
+   {
+    "key": "active_connections",
+    "label": "Active Connections",
+    "unit": "count",
+    "provider_metric": "cloudsql.googleapis.com/database/postgresql/num_backends",
+    "namespace": "cloudsql_database",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "GCP_GCS_BUCKET",
+  "provider": "gcp",
+  "category": "storage",
+  "display_name": "Cloud Storage Bucket",
+  "icon": "bucket",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 900,
+  "metrics": []
+ },
+ {
+  "code": "GCP_GKE_CLUSTER",
+  "provider": "gcp",
+  "category": "container",
+  "display_name": "GKE Cluster",
+  "icon": "kubernetes",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "GCP_CLOUD_FUNCTION",
+  "provider": "gcp",
+  "category": "serverless",
+  "display_name": "Cloud Function",
+  "icon": "function",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "GCP_LOAD_BALANCER",
+  "provider": "gcp",
+  "category": "network",
+  "display_name": "Load Balancer",
+  "icon": "balance",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": true,
+  "default_poll_sec": 300,
+  "metrics": []
+ },
+ {
+  "code": "K8S_CLUSTER",
+  "provider": "k8s",
+  "category": "container",
+  "display_name": "Kubernetes Cluster",
+  "icon": "kubernetes",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "node_count",
+    "label": "Nodes Ready",
+    "unit": "count",
+    "provider_metric": "kube_node_status_condition",
+    "namespace": "kube-state-metrics",
+    "statistic": "min",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": false
+   },
+   {
+    "key": "pod_count",
+    "label": "Running Pods",
+    "unit": "count",
+    "provider_metric": "kube_pod_status_phase",
+    "namespace": "kube-state-metrics",
+    "statistic": "mean",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "cpu_requests_pct",
+    "label": "CPU Requests Committed",
+    "unit": "percent",
+    "provider_metric": "cluster:cpu_requests:ratio",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 85,
+    "critical": 95,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "K8S_NODE",
+  "provider": "k8s",
+  "category": "container",
+  "display_name": "Kubernetes Node",
+  "icon": "server",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "cpu_utilization",
+    "label": "CPU Utilization",
+    "unit": "percent",
+    "provider_metric": "node_cpu_seconds_total",
+    "namespace": "node-exporter",
+    "statistic": "rate",
+    "trouble": 80,
+    "critical": 92,
+    "higher_is_worse": true
+   },
+   {
+    "key": "memory_utilization",
+    "label": "Memory Utilization",
+    "unit": "percent",
+    "provider_metric": "node_memory_MemAvailable_bytes",
+    "namespace": "node-exporter",
+    "statistic": "mean",
+    "trouble": 80,
+    "critical": 92,
+    "higher_is_worse": true
+   },
+   {
+    "key": "disk_pressure",
+    "label": "Disk Pressure",
+    "unit": "count",
+    "provider_metric": "kube_node_status_condition",
+    "namespace": "kube-state-metrics",
+    "statistic": "max",
+    "trouble": 1,
+    "critical": 1,
+    "higher_is_worse": true
+   },
+   {
+    "key": "pod_capacity_pct",
+    "label": "Pod Capacity Used",
+    "unit": "percent",
+    "provider_metric": "kube_node_status_allocatable_pods",
+    "namespace": "kube-state-metrics",
+    "statistic": "mean",
+    "trouble": 85,
+    "critical": 95,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "K8S_NAMESPACE",
+  "provider": "k8s",
+  "category": "container",
+  "display_name": "Kubernetes Namespace",
+  "icon": "folder",
+  "supports_availability": false,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": []
+ },
+ {
+  "code": "K8S_WORKLOAD",
+  "provider": "k8s",
+  "category": "container",
+  "display_name": "Kubernetes Workload",
+  "icon": "box",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "replicas_unavailable",
+    "label": "Unavailable Replicas",
+    "unit": "count",
+    "provider_metric": "kube_deployment_status_replicas_unavailable",
+    "namespace": "kube-state-metrics",
+    "statistic": "max",
+    "trouble": 1,
+    "critical": 1,
+    "higher_is_worse": true
+   },
+   {
+    "key": "restart_rate",
+    "label": "Container Restarts",
+    "unit": "count",
+    "provider_metric": "kube_pod_container_status_restarts_total",
+    "namespace": "kube-state-metrics",
+    "statistic": "rate",
+    "trouble": 1,
+    "critical": 5,
+    "higher_is_worse": true
+   },
+   {
+    "key": "oom_killed",
+    "label": "OOM Killed",
+    "unit": "count",
+    "provider_metric": "kube_pod_container_status_last_terminated_reason",
+    "namespace": "kube-state-metrics",
+    "statistic": "sum",
+    "trouble": 1,
+    "critical": 1,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "K8S_POD",
+  "provider": "k8s",
+  "category": "container",
+  "display_name": "Kubernetes Pod",
+  "icon": "box",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": []
+ },
+ {
+  "code": "WEB_HTTP",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "Website",
+  "icon": "globe",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "response_time",
+    "label": "Response Time",
+    "unit": "milliseconds",
+    "provider_metric": "http_duration_ms",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 2000,
+    "critical": 5000,
+    "higher_is_worse": true
+   },
+   {
+    "key": "status_code",
+    "label": "HTTP Status",
+    "unit": "count",
+    "provider_metric": "http_status",
+    "namespace": "nimbuseye",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   },
+   {
+    "key": "dns_time",
+    "label": "DNS Lookup",
+    "unit": "milliseconds",
+    "provider_metric": "http_dns_ms",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 500,
+    "critical": 1500,
+    "higher_is_worse": true
+   },
+   {
+    "key": "tls_handshake",
+    "label": "TLS Handshake",
+    "unit": "milliseconds",
+    "provider_metric": "http_tls_ms",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 1000,
+    "critical": 3000,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "WEB_REST_API",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "REST API",
+  "icon": "api",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "response_time",
+    "label": "Response Time",
+    "unit": "milliseconds",
+    "provider_metric": "http_duration_ms",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 2000,
+    "critical": 5000,
+    "higher_is_worse": true
+   },
+   {
+    "key": "status_code",
+    "label": "HTTP Status",
+    "unit": "count",
+    "provider_metric": "http_status",
+    "namespace": "nimbuseye",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "WEB_PORT",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "Port / TCP",
+  "icon": "plug",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "connect_time",
+    "label": "Connect Time",
+    "unit": "milliseconds",
+    "provider_metric": "tcp_connect_ms",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 2000,
+    "critical": 5000,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "WEB_PING",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "PING",
+  "icon": "signal",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "round_trip_time",
+    "label": "Round Trip Time",
+    "unit": "milliseconds",
+    "provider_metric": "icmp_rtt_ms",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 200,
+    "critical": 500,
+    "higher_is_worse": true
+   },
+   {
+    "key": "packet_loss",
+    "label": "Packet Loss",
+    "unit": "percent",
+    "provider_metric": "icmp_loss_pct",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 10,
+    "critical": 50,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "WEB_DNS",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "DNS Server",
+  "icon": "dns",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 300,
+  "metrics": [
+   {
+    "key": "resolve_time",
+    "label": "Resolve Time",
+    "unit": "milliseconds",
+    "provider_metric": "dns_resolve_ms",
+    "namespace": "nimbuseye",
+    "statistic": "mean",
+    "trouble": 500,
+    "critical": 1500,
+    "higher_is_worse": true
+   }
+  ]
+ },
+ {
+  "code": "WEB_SSL_CERT",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "SSL Certificate",
+  "icon": "lock",
+  "supports_availability": true,
+  "supports_metrics": true,
+  "supports_cost": false,
+  "default_poll_sec": 3600,
+  "metrics": [
+   {
+    "key": "days_to_expiry",
+    "label": "Days to Expiry",
+    "unit": "count",
+    "provider_metric": "ssl_days_remaining",
+    "namespace": "nimbuseye",
+    "statistic": "min",
+    "trouble": 30,
+    "critical": 7,
+    "higher_is_worse": false
+   }
+  ]
+ },
+ {
+  "code": "WEB_DOMAIN_EXPIRY",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "Domain Expiry",
+  "icon": "calendar",
+  "supports_availability": true,
+  "supports_metrics": false,
+  "supports_cost": false,
+  "default_poll_sec": 86400,
+  "metrics": [
+   {
+    "key": "days_to_expiry",
+    "label": "Days to Expiry",
+    "unit": "count",
+    "provider_metric": "domain_days_remaining",
+    "namespace": "nimbuseye",
+    "statistic": "min",
+    "trouble": 30,
+    "critical": 7,
+    "higher_is_worse": false
+   }
+  ]
+ },
+ {
+  "code": "WEB_HEARTBEAT",
+  "provider": "synthetic",
+  "category": "web",
+  "display_name": "Heartbeat (inbound)",
+  "icon": "heart",
+  "supports_availability": true,
+  "supports_metrics": false,
+  "supports_cost": false,
+  "default_poll_sec": 60,
+  "metrics": [
+   {
+    "key": "since_last_beat",
+    "label": "Time Since Last Beat",
+    "unit": "seconds",
+    "provider_metric": "heartbeat_age_sec",
+    "namespace": "nimbuseye",
+    "statistic": "max",
+    "trouble": null,
+    "critical": null,
+    "higher_is_worse": true
+   }
+  ]
+ }
+]

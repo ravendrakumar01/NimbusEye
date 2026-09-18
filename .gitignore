@@ -1,0 +1,50 @@
+# Build output
+/bin/
+/dist/
+web/dist/
+*.exe
+
+# Dependencies
+node_modules/
+
+# Credentials and secrets — never committed.
+# Cloud credentials are referenced by path from the database (cloud_accounts.
+# credentials_ref) and resolved at runtime, so nothing secret belongs in the repo.
+*.pem
+*.key
+*.p12
+*.pfx
+.env
+.env.*
+!.env.example
+creds/
+secrets/
+*oci_api_key*
+*service-account*.json
+*.tfstate
+*.tfstate.*
+
+# Local runtime state
+*.log
+/tmp/
+*.pid
+
+# Editor and OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
+
+# Go
+/vendor/
+*.test
+coverage.out
+
+# Vite / TypeScript
+web/.vite/
+*.tsbuildinfo
+
+# Generated database credentials
+.nimbuseye/
+db.env

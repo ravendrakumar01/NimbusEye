@@ -1,0 +1,52 @@
+[Unit]
+Description=NimbusEye alert evaluator
+After=network-online.target postgresql.service nimbuseye-api.service
+Wants=network-online.target
+Requires=postgresql.service
+
+# Restart rate limit. These belong in [Unit]: systemd ignores them in
+# [Service] without failing, so a unit that looks rate-limited is not.
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=nimbuseye
+Group=nimbuseye
+EnvironmentFile=/etc/nimbuseye/nimbuseye.env
+
+# One pass a minute. Faster than the collector's poll interval on purpose: the
+# evaluator should never be the reason an alert is late.
+ExecStart=/opt/nimbuseye/bin/nimbuseye-alerter --interval 1m --log-level info
+
+Restart=always
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictSUIDSGID=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0077
+ReadOnlyPaths=/opt/nimbuseye /etc/nimbuseye
+
+[Install]
+WantedBy=multi-user.target
