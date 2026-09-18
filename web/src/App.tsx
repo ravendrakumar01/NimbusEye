@@ -22,6 +22,8 @@ import { Maintenance } from "./pages/Maintenance";
 import { SLO } from "./pages/SLO";
 import { AlertLogs } from "./pages/AlertLogs";
 import { MonitorGroups } from "./pages/MonitorGroups";
+import { BusinessHours, Tags } from "./pages/AdminConfig";
+import { Discovered, BulkAction } from "./pages/Discovered";
 import { AdminThresholds } from "./pages/AdminThresholds";
 import { AdminNotifications } from "./pages/AdminNotifications";
 import { AdminChannels } from "./pages/AdminChannels";
@@ -169,36 +171,6 @@ export default function App() {
             />
           }
         />
-        <Route
-          path="apm"
-          element={
-            <Placeholder
-              title="APM"
-              summary="Application performance monitoring: traces, transactions and real user monitoring. Not started."
-              planned={[
-                "Application and instance inventory",
-                "Transaction traces with slow-query attribution",
-                "Real user monitoring by geography and browser",
-                "Error and exception tracking",
-              ]}
-            />
-          }
-        />
-        <Route
-          path="server"
-          element={
-            <Placeholder
-              title="Server"
-              summary="Agent-based server monitoring. Needs an agent build and an install flow, which is a separate piece of work from cloud API polling."
-              planned={[
-                "Linux and Windows agent with a device-key install command",
-                "60+ host metrics at one-minute frequency",
-                "Process, service, file and directory checks",
-                "AppLogs ingestion",
-              ]}
-            />
-          }
-        />
         <Route path="groups" element={<MonitorGroups />} />
         <Route path="reports" element={<Reports />} />
         {/* Outages has its own screen under Home as well as a reports tab. The
@@ -217,26 +189,13 @@ export default function App() {
         <Route path="admin/channels" element={<AdminChannels />} />
         <Route path="admin/users" element={<AdminUsers />} />
         <Route path="admin/audit" element={<AdminAudit />} />
+        <Route path="admin/business-hours" element={<BusinessHours />} />
+        <Route path="admin/tags" element={<Tags />} />
+        <Route path="admin/bulk" element={<BulkAction />} />
+        <Route path="discovered" element={<Discovered />} />
         <Route path="admin/cloud-accounts/:id" element={<CloudAccountDetail />} />
 
         <Route path="admin/add-monitor" element={<Navigate to="/add-monitor" replace />} />
-
-        <Route
-          path="finops"
-          element={
-            <Placeholder
-              title="Nimbus FinOps"
-              summary="Cost analysis across all four clouds, built on billing exports rather than metric APIs. The database schema exists; the ingest pipeline does not."
-              planned={[
-                "Daily spend by provider, service, region and tag",
-                "Cost centres with tag-based allocation rules for showback",
-                "Budgets with forecast-based breach alerts",
-                "Amortised versus list cost, so commitment savings are visible",
-                "Untagged and idle resource reporting",
-              ]}
-            />
-          }
-        />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

@@ -45,13 +45,14 @@ import {
   TabStrip,
 } from "../components/ui";
 
-type Tab = "availability" | "performance" | "outages" | "sla";
+type Tab = "availability" | "performance" | "outages" | "sla" | "trend";
 
 const TABS: { value: Tab; label: string }[] = [
   { value: "availability", label: "Availability Summary" },
   { value: "performance", label: "Performance" },
   { value: "outages", label: "Outages" },
   { value: "sla", label: "SLA" },
+  { value: "trend", label: "Health Trend" },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -727,6 +728,134 @@ function SLAReportView({ query }: { query: ReportQuery }) {
   );
 }
 
+
+/* -------------------------------------------------------------------------- */
+/* Health trend                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Availability per day, per monitor.
+ *
+ * The availability tab gives one number for a window; this gives the shape. They
+ * answer different questions: "how was last week" versus "is this getting worse".
+ *
+ * The direction is only stated once there are four or more measured days. Calling
+ * two days a trend is the kind of claim that gets repeated in a meeting and is
+ * wrong about as often as it is right.
+ */
+function HealthTrendView({ query }: { query: ReportQuery }) {
+  const state = useAsync(() => api.healthTrend({ ...query, limit: 40 }), [query.from, query.to]);
+
+  if (state.initialLoading) return <Spinner label="Building the trend" />;
+  if (state.error) return <ErrorState error={state.error} onRetry={state.reload} />;
+  const d = state.data;
+  if (!d) return null;
+
+  const dirTone: Record<string, string> = {
+    improving: "text-st-up",
+    worsening: "text-st-down",
+    steady: "text-slate-500",
+  };
+
+  return (
+    <div className="space-y-3 p-4">
+      {d.measured_days < 4 && (
+        <InfoBanner tone="warn">
+          Only {d.measured_days} of the {d.days} days in this window carry data, so no
+          direction is reported. A trend needs at least four measured days before it
+          means anything — until then the daily figures are shown without a conclusion
+          drawn from them.
+        </InfoBanner>
+      )}
+
+      <Card title={`Availability by day — ${d.from} to ${d.to}`}>
+        {d.rows.length === 0 ? (
+          <EmptyState
+            title="No availability recorded in this window"
+            hint="Availability is rolled up once a monitor has been checked for a day."
+          />
+        ) : (
+          <ReportTable>
+            <thead>
+              <tr>
+                <Th>Monitor</Th>
+                <Th align="center">Trend</Th>
+                <Th align="right">First</Th>
+                <Th align="right">Latest</Th>
+                <Th>Direction</Th>
+                <Th align="center">Daily</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {d.rows.map((r, i) => {
+                const series = r.points
+                  .map((p) => p.availability_pct)
+                  .filter((v): v is number => v !== null);
+                return (
+                  <tr key={r.resource_id} className={i % 2 ? "bg-slate-50/60" : undefined}>
+                    <Td>
+                      <Link
+                        to={`/monitor/${r.resource_id}`}
+                        className="text-brand-600 hover:underline"
+                      >
+                        {r.display_name}
+                      </Link>
+                      <div className="text-[11px] text-slate-400">{r.type_name}</div>
+                    </Td>
+                    <Td align="center">
+                      <Sparkline values={series} />
+                    </Td>
+                    <Td align="right">
+                      <Availability pct={r.first_pct} />
+                    </Td>
+                    <Td align="right">
+                      <Availability pct={r.last_pct} />
+                    </Td>
+                    <Td>
+                      {r.direction ? (
+                        <span className={cx("text-[12px] font-medium", dirTone[r.direction])}>
+                          {r.direction}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-[11px] text-slate-400"
+                          title="Fewer than four measured days"
+                        >
+                          too early to say
+                        </span>
+                      )}
+                    </Td>
+                    <Td align="center">
+                      <span className="font-mono text-[11px] text-slate-500">
+                        {r.points
+                          .map((p) =>
+                            p.availability_pct === null
+                              ? "—"
+                              : p.availability_pct >= 99.95
+                                ? "\u2713"
+                                : Math.round(p.availability_pct).toString(),
+                          )
+                          .join(" ")}
+                      </span>
+                    </Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </ReportTable>
+        )}
+      </Card>
+
+      <p className="px-1 text-[11px] leading-relaxed text-slate-500">
+        Rows are ordered worst mean first, because a trend list is read to find what is
+        degrading rather than alphabetically. In the daily column a tick means the day
+        was effectively perfect, a number is the rounded percentage, and an em dash means
+        the day was never measured.
+      </p>
+    </div>
+  );
+}
+
 /* -------------------------------------------------------------------------- */
 /* Page                                                                        */
 /* -------------------------------------------------------------------------- */
@@ -822,6 +951,7 @@ export function Reports() {
             {tab === "performance" && <PerformanceReportView query={query} />}
             {tab === "outages" && <OutageReportView query={query} />}
             {tab === "sla" && <SLAReportView query={query} />}
+            {tab === "trend" && <HealthTrendView query={query} />}
           </>
         )}
       </div>

@@ -143,50 +143,58 @@ resolves the secret at runtime. All cloud access is intended to be **read-only**
 
 ## Not built
 
-The reference console shows these in its navigation. They are deliberately absent
-from ours rather than greyed out: a console full of dead entries reads as broken,
-and this one is in daily use. The list lives here so removing the rows does not
-lose the information.
+The navigation shows only what works. The reference console has more, and the gaps
+are recorded here rather than greyed out in the interface: a console full of dead
+entries reads as broken, and this one is in daily use.
 
-### Home
+### Absent sections
 
-| Row | Why not |
+| Section | Why |
 |---|---|
-| Help Assistant | Needs a documentation corpus to answer from |
-| Dashboards | No custom dashboard builder |
-| Capacity Planning | Needs months of history to forecast from; there are days |
-| Zia Anomaly Dashboard | No anomaly detection model |
-| Schedule IT Automation | No automation runner |
-| IT Automation Logs | Same |
-| Log Report | No log ingestion |
-
-### Whole sections
-
-| Section | State |
-|---|---|
-| APM | Needs a per-language agent. A separate product, not a feature |
-| Server | Needs a per-OS agent, same |
-| Kubernetes | Clusters are discovered and alerted on via OCI metrics; there is no in-cluster agent, so no pod or workload detail |
+| Server | Needs a per-OS agent. A separate product, not a feature |
+| APM | Needs a per-language agent, same |
 | Nimbus FinOps | Database schema exists; the billing ingest does not |
+
+Kubernetes clusters are discovered and alerted on through OCI's own metrics —
+unschedulable pods, node conditions, API server load — but there is no in-cluster
+agent, so no pod or workload detail.
+
+### Removed rows, by section
+
+**Home** — Help Assistant (needs a documentation corpus), Dashboards (no builder),
+Capacity Planning (needs months of history), Zia Anomaly Dashboard (no model),
+Schedule IT Automation and IT Automation Logs (no runner), Log Report (no log
+ingestion).
+
+**Web** — the browser-based checks: Web Transaction, SaaS Synthetics, Webpage
+Speed, Synthetic Mobile App. These need a headless browser fleet, which is
+infrastructure rather than code. Also SOAP, gRPC, REST API Transaction, File
+Upload, Application Cluster, WebSocket, UDP Port, Mail Delivery and Heartbeat —
+each is a prober check that could be written; none is written.
+
+**Admin** — Smart Groups (dynamic membership by rule; the `match_rules` column
+exists and nothing fills it), Import and Export Monitors, Configuration Rules,
+User Groups, On-Call Schedules, and the empty Automations, Server Monitor and
+AppLogs group headers.
+
+**Reports** — Forecast (needs history to extrapolate from), Custom Reports (a
+report builder), Schedule Reports (needs a scheduler).
 
 ### Elsewhere
 
-- **Alert delivery.** The evaluator decides who should be told and writes the
-  intent to `alert_notifications`; nothing sends yet. SMTP is configured, so this
-  is the shortest path from "detects problems" to "tells somebody".
-- **AWS, Azure and GCP collectors.** The OCI one establishes the pattern; these
-  are the same shape against different APIs.
+- **Alert delivery.** The evaluator decides who should be told and records the
+  intent in `alert_notifications`; nothing sends yet. SMTP is configured, so this
+  is the shortest path from "detects problems" to "tells somebody". The Alert Logs
+  page shows exactly what is currently not being delivered.
+- **AWS, Azure and GCP collectors.** The OCI one establishes the pattern.
 - **VictoriaMetrics.** `metric_samples` lives in PostgreSQL, day-partitioned, and
   is explicitly interim.
-- **Reports:** Health Trend, Forecast, Custom and Scheduled reports.
-- **Admin:** user groups, on-call schedules, business hours, tags, import and
-  export of monitors, configuration rules, bulk actions.
 - **MFA**, and a session cleanup job.
 
 ### Structural, not merely unwritten
 
-These need infrastructure or agents rather than more code, and saying so is more
-useful than listing them as roadmap items:
+These need infrastructure or agents rather than more code, and the distinction
+matters: only one kind belongs on a roadmap.
 
 - **Synthetic transactions** need a headless browser fleet.
 - **Global check locations** would mean probe servers in many regions. The

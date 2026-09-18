@@ -800,6 +800,94 @@ export interface OutagePage {
   total_down_sec: number;
 }
 
+/* ---------------------------------------------------------------------------
+ * Business hours, tags, discovery, trend, bulk
+ * ------------------------------------------------------------------------- */
+
+export interface BusinessHoursSlot {
+  day: number;
+  start: string;
+  end: string;
+}
+
+export interface BusinessHours {
+  id: string;
+  display_name: string;
+  timezone: string;
+  slots: BusinessHoursSlot[];
+  created_at: string;
+  used_by: number;
+  /** Evaluated server-side in the schedule's own timezone, not the viewer's. */
+  in_hours_now: boolean;
+}
+
+export interface Tag {
+  id: string;
+  key: string;
+  value: string;
+  source: string;
+  color?: string;
+  resources: number;
+}
+
+export interface TagKey {
+  key: string;
+  source: string;
+  values: Tag[];
+  resources: number;
+}
+
+export interface UnmappedType {
+  provider_type: string;
+  count: number;
+}
+
+export interface DiscoveryInventory {
+  account_id: string;
+  account_name: string;
+  provider: string;
+  last_run_at: string | null;
+  status?: string;
+  discovered: number;
+  monitored: number;
+  ignored: number;
+  unmapped: UnmappedType[];
+  unmapped_total: number;
+}
+
+export interface TrendPoint {
+  day: string;
+  availability_pct: number | null;
+  down_sec: number;
+}
+
+export interface TrendSeries {
+  resource_id: string;
+  display_name: string;
+  type_name: string;
+  provider: string;
+  points: TrendPoint[];
+  /** Null when there is too little data to call it a trend. */
+  direction: string | null;
+  first_pct: number | null;
+  last_pct: number | null;
+}
+
+export interface HealthTrend {
+  from: string;
+  to: string;
+  days: number;
+  rows: TrendSeries[];
+  measured_days: number;
+}
+
+export interface BulkActionResult {
+  action: string;
+  requested: number;
+  applied: number;
+  skipped?: Record<string, string>;
+}
+
 export const api = {
   /** Public: reports whether a session exists, without treating absence as an error. */
   session: () => get<SessionState>("/auth/session"),
@@ -910,6 +998,26 @@ export const api = {
     get<AlertLogPage>("/alert-logs", q),
   outageList: (q: { ongoing?: 1; days?: number; limit?: number; offset?: number }) =>
     get<OutagePage>("/outage-list", q),
+
+  /* Business hours, tags, discovery, trend, bulk. */
+  businessHours: () =>
+    get<{ schedules: BusinessHours[]; count: number }>("/admin/business-hours"),
+  createBusinessHours: (body: Record<string, unknown>) =>
+    send<BusinessHours>("/admin/business-hours", "POST", body),
+  deleteBusinessHours: (id: string) =>
+    send<{ deleted: boolean }>(`/admin/business-hours/${id}`, "DELETE"),
+  setProfileBusinessHours: (id: string, body: Record<string, unknown>) =>
+    send<{ updated: boolean }>(`/admin/notification-profiles/${id}/business-hours`, "PATCH", body),
+
+  tagInventory: () =>
+    get<{ keys: TagKey[]; key_count: number; value_count: number }>("/admin/tags"),
+
+  discovered: () => get<{ accounts: DiscoveryInventory[] }>("/discovered"),
+
+  healthTrend: (q: ReportQuery) => get<HealthTrend>("/reports/health-trend", q),
+
+  bulkAction: (action: string, ids: string[]) =>
+    send<BulkActionResult>("/monitors/bulk", "POST", { action, resource_ids: ids }),
   filters: () => get<Filters>("/catalog/filters"),
   resourceTypes: (provider?: string) =>
     get<{ items: ResourceType[]; total: number }>("/catalog/resource-types", { provider }),

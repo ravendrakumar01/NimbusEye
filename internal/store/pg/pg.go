@@ -10,6 +10,7 @@ package pg
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -1059,15 +1060,26 @@ func (s *Store) RecordRun(run collect.RunReport) error {
 			strings.Join(run.RegionsFailed, ", "))
 	}
 
+	// What discovery saw but does not monitor, kept as a snapshot so the console can
+	// answer "what does this tenancy contain that we are not watching". Previously
+	// this only reached the log, where nobody looks for an inventory question.
+	unmapped, err := json.Marshal(run.UnmappedTypes)
+	if err != nil {
+		unmapped = []byte("{}")
+	}
+
 	return s.withTx(ctx, func(tx pgx.Tx) error {
 		tag, err := tx.Exec(ctx,
 			`UPDATE cloud_accounts
 			 SET last_discovery_at = $2, last_discovery_status = $3, last_error = $4,
 			     consecutive_failures = CASE WHEN $3 = 'ok' THEN 0
 			                                 ELSE consecutive_failures + 1 END,
+			     discovered_total = $5, mapped_total = $6, ignored_total = $7,
+			     unmapped_types = $8::jsonb,
 			     updated_at = now()
 			 WHERE id = $1::uuid`,
-			run.AccountID, run.FinishedAt, run.State, nullIfEmpty(lastError))
+			run.AccountID, run.FinishedAt, run.State, nullIfEmpty(lastError),
+			run.Discovered, run.Mapped, run.Ignored, unmapped)
 		if err != nil {
 			return err
 		}
