@@ -365,6 +365,22 @@ async function get<T>(path: string, params?: Record<string, unknown>): Promise<T
   return request<T>(url.toString(), { method: "GET" });
 }
 
+/**
+ * Mutation helper.
+ *
+ * request() already attaches the CSRF header for state-changing methods, so this
+ * only exists to stop every admin call repeating the same four lines. A body is
+ * optional: DELETE and the unlock action send none.
+ */
+async function send<T>(path: string, method: "POST" | "PATCH" | "DELETE", body?: unknown): Promise<T> {
+  return request<T>(BASE + path, {
+    method,
+    ...(body === undefined
+      ? {}
+      : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+  });
+}
+
 async function request<T>(url: string, init: RequestInit): Promise<T> {
   const method = (init.method ?? "GET").toUpperCase();
   const headers: Record<string, string> = {
@@ -446,6 +462,254 @@ export interface AlarmQuery {
   page_size?: number;
 }
 
+/* ---------------------------------------------------------------------------
+ * Reports
+ *
+ * Nullable numbers are deliberate. An availability of null means "not measured
+ * in this window", which is a different statement from 0% and has to render
+ * differently: an em dash, not a red zero.
+ * ------------------------------------------------------------------------- */
+
+export interface DailyPoint {
+  day: string;
+  availability_pct: number | null;
+  down_sec: number;
+}
+
+export interface AvailabilityRow {
+  resource_id: string;
+  display_name: string;
+  resource_type: string;
+  type_name: string;
+  provider: string;
+  region: string;
+  up_sec: number;
+  down_sec: number;
+  maintenance_sec: number;
+  availability_pct: number | null;
+  outage_count: number;
+  mttr_sec: number | null;
+  days_with_data: number;
+  daily?: DailyPoint[];
+}
+
+export interface AvailabilitySummary {
+  from: string;
+  to: string;
+  resources: number;
+  mean_availability_pct: number | null;
+  total_down_sec: number;
+  total_outages: number;
+  by_provider: Record<string, number>;
+  by_type: Record<string, number>;
+  rows: AvailabilityRow[];
+}
+
+export interface OutageReportRow {
+  id: string;
+  resource_id: string;
+  display_name: string;
+  type_name: string;
+  provider: string;
+  region: string;
+  started_at: string;
+  ended_at: string | null;
+  duration_sec: number;
+  severity: string;
+  classified_as: string;
+  root_cause?: string;
+}
+
+export interface OutageReport {
+  from: string;
+  to: string;
+  total: number;
+  ongoing: number;
+  total_down_sec: number;
+  mean_mttr_sec: number | null;
+  longest_sec: number;
+  rows: OutageReportRow[];
+}
+
+export interface MetricOption {
+  key: string;
+  label: string;
+  unit: string;
+  resource_count: number;
+}
+
+export interface PerformanceRow {
+  resource_id: string;
+  display_name: string;
+  type_name: string;
+  provider: string;
+  metric_key: string;
+  label: string;
+  unit: string;
+  avg: number;
+  min: number;
+  max: number;
+  p95: number;
+  samples: number;
+  trouble?: number;
+  critical?: number;
+  /** Absent rather than empty when nothing is breaching. */
+  breaching?: string;
+}
+
+export interface PerformanceReport {
+  from: string;
+  to: string;
+  metric_key: string;
+  rows: PerformanceRow[];
+  available_metrics: MetricOption[];
+}
+
+export interface SLARow {
+  id: string;
+  display_name: string;
+  target_pct: number;
+  actual_pct: number | null;
+  compliant: boolean | null;
+  resource_count: number;
+  period: string;
+  error_budget_sec: number | null;
+  down_sec: number;
+}
+
+export interface SLAReport {
+  from: string;
+  to: string;
+  rows: SLARow[];
+}
+
+/** Shared query shape for every report.
+ *
+ * The index signature is what lets this be passed straight to the query-string
+ * builder, which takes an open record. Without it every call site would need a
+ * cast, and a cast is where a typo in a parameter name stops being a compile
+ * error. */
+export interface ReportQuery {
+  [k: string]: unknown;
+  from?: string;
+  to?: string;
+  provider?: string[];
+  type?: string[];
+  group?: string;
+  order?: "worst";
+  daily?: 1;
+  limit?: number;
+  metric?: string;
+}
+
+/* ---------------------------------------------------------------------------
+ * Administration
+ *
+ * Fields the Go side marks omitempty are optional here. Getting that wrong is
+ * how a table renders "undefined" for a login entry that simply has no object
+ * attached to it.
+ * ------------------------------------------------------------------------- */
+
+export interface ThresholdRule {
+  metric: string;
+  op: string;
+  trouble: number | null;
+  critical: number | null;
+  polls_check: number;
+  strategy: string;
+  /** Derived from the catalog on read; ignored on write. */
+  label?: string;
+  unit?: string;
+  higher_is_worse: boolean;
+}
+
+export interface ThresholdProfile {
+  id: string;
+  display_name: string;
+  resource_type: string;
+  type_name: string;
+  provider: string;
+  rules: ThresholdRule[];
+  down_polls_check: number;
+  system_generated: boolean;
+  is_default: boolean;
+  updated_at: string;
+  resource_count: number;
+  available_metrics?: ThresholdRule[];
+}
+
+export interface AlertRule {
+  severity: string;
+  channels: string[];
+}
+
+export interface EscalationLevel {
+  level: number;
+  after_minutes: number;
+  channels: string[];
+}
+
+export interface NotificationProfile {
+  id: string;
+  display_name: string;
+  notification_delay: number;
+  business_hours_id: string | null;
+  business_hours_name?: string;
+  notify_outside_business_hours: boolean;
+  alert_rules: AlertRule[];
+  escalation_levels: EscalationLevel[];
+  persistent_alert_interval: number;
+  notify_on_recovery: boolean;
+  rca_needed: boolean;
+  is_default: boolean;
+  updated_at: string;
+}
+
+export interface NotificationChannel {
+  id: string;
+  channel_type: string;
+  display_name: string;
+  config: Record<string, unknown>;
+  secret_ref?: string;
+  enabled: boolean;
+  verified_at: string | null;
+  created_at: string;
+  used_by: number;
+}
+
+export interface AdminUser {
+  id: string;
+  email: string;
+  display_name: string;
+  role: string;
+  status: string;
+  mfa_enabled: boolean;
+  timezone?: string;
+  last_login_at: string | null;
+  created_at: string;
+  has_password: boolean;
+  locked_until: string | null;
+  failed_logins: number;
+}
+
+export interface AuditEntry {
+  id: number;
+  user_id: string | null;
+  user_email?: string;
+  action: string;
+  object_type?: string;
+  object_id?: string;
+  detail: Record<string, unknown>;
+  ip?: string;
+  created_at: string;
+}
+
+export interface AuditPage {
+  entries: AuditEntry[];
+  next_before: number;
+  actions?: string[];
+}
+
 export const api = {
   /** Public: reports whether a session exists, without treating absence as an error. */
   session: () => get<SessionState>("/auth/session"),
@@ -484,6 +748,54 @@ export const api = {
     }),
 
   summary: () => get<StatusSummary>("/status/summary"),
+
+  /* Reports. They all take the same filter shape, so switching tabs does not
+     mean rebuilding the query. */
+  reportAvailability: (q: ReportQuery) => get<AvailabilitySummary>("/reports/availability", q),
+  reportOutages: (q: ReportQuery) => get<OutageReport>("/reports/outages", q),
+  reportPerformance: (q: ReportQuery) => get<PerformanceReport>("/reports/performance", q),
+  reportSLA: (q: ReportQuery) => get<SLAReport>("/reports/sla", q),
+
+  /* Administration. Reads are open to any signed-in user; the writes below fail
+     with 403 for anyone who is not an admin or owner, and the server is the only
+     place that decision is made. */
+  thresholdProfiles: (provider?: string) =>
+    get<{ profiles: ThresholdProfile[]; count: number }>("/admin/threshold-profiles", { provider }),
+  thresholdProfile: (id: string) => get<ThresholdProfile>(`/admin/threshold-profiles/${id}`),
+  updateThresholdProfile: (
+    id: string,
+    body: { rules?: ThresholdRule[]; down_polls_check?: number },
+  ) => send<ThresholdProfile>(`/admin/threshold-profiles/${id}`, "PATCH", body),
+
+  notificationProfiles: () =>
+    get<{
+      profiles: NotificationProfile[];
+      channels_total: number;
+      channels_enabled: number;
+      delivery_ready: boolean;
+    }>("/admin/notification-profiles"),
+  updateNotificationProfile: (id: string, body: Record<string, unknown>) =>
+    send<NotificationProfile>(`/admin/notification-profiles/${id}`, "PATCH", body),
+
+  channels: () =>
+    get<{ channels: NotificationChannel[]; smtp_configured: boolean }>("/admin/channels"),
+  createChannel: (body: Record<string, unknown>) =>
+    send<NotificationChannel>("/admin/channels", "POST", body),
+  updateChannel: (id: string, body: Record<string, unknown>) =>
+    send<NotificationChannel>(`/admin/channels/${id}`, "PATCH", body),
+  deleteChannel: (id: string) => send<{ deleted: boolean }>(`/admin/channels/${id}`, "DELETE"),
+
+  adminUsers: () =>
+    get<{ users: AdminUser[]; me: string; smtp_configured: boolean }>("/admin/users"),
+  createAdminUser: (body: Record<string, unknown>) =>
+    send<{ user: AdminUser; email_sent: boolean; next_action: string }>("/admin/users", "POST", body),
+  updateAdminUser: (id: string, body: Record<string, unknown>) =>
+    send<AdminUser>(`/admin/users/${id}`, "PATCH", body),
+  deleteAdminUser: (id: string) => send<{ deleted: boolean }>(`/admin/users/${id}`, "DELETE"),
+  unlockAdminUser: (id: string) => send<{ unlocked: boolean }>(`/admin/users/${id}/unlock`, "POST"),
+
+  auditLog: (q: { action?: string; user?: string; before?: number; limit?: number }) =>
+    get<AuditPage>("/admin/audit", q),
   filters: () => get<Filters>("/catalog/filters"),
   resourceTypes: (provider?: string) =>
     get<{ items: ResourceType[]; total: number }>("/catalog/resource-types", { provider }),

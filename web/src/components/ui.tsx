@@ -194,6 +194,7 @@ export function Button({
   disabled,
   type = "button",
   className,
+  title,
 }: {
   children: ReactNode;
   onClick?: () => void;
@@ -202,6 +203,8 @@ export function Button({
   disabled?: boolean;
   type?: "button" | "submit";
   className?: string;
+  /** Tooltip. Used where the label alone does not explain what the action does. */
+  title?: string;
 }) {
   const variants = {
     default: "border-slate-300 bg-white text-slate-700 hover:bg-slate-50",
@@ -214,6 +217,7 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={cx(
         "inline-flex items-center gap-1.5 rounded-md border font-medium transition disabled:cursor-not-allowed disabled:opacity-50",
         size === "xs" ? "px-2 py-1 text-xs" : "px-2.5 py-1.5 text-sm",

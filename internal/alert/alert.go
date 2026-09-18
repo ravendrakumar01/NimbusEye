@@ -45,6 +45,16 @@ type Evaluator struct {
 	pool     *pgxpool.Pool
 	tenantID string
 	log      *slog.Logger
+
+	// RollupDays is how far back the availability rollup recomputes, in days.
+	// One means yesterday and today, which is all that normally changes.
+	//
+	// It is configurable because the rollup's own definition can change — as it
+	// did when unmeasured time stopped being counted as uptime — and every day
+	// computed under the old definition then carries a figure the current code
+	// would never produce. Leaving those in place means a seven-day report is
+	// partly wrong with no indication which part.
+	RollupDays int
 }
 
 // Report summarises one evaluation pass.
@@ -708,15 +718,35 @@ func (e *Evaluator) queueNotifications(ctx context.Context, tx pgx.Tx) (int, err
 	return int(tag.RowsAffected()), nil
 }
 
-// rollupAvailability recomputes availability_daily for today and yesterday.
+// rollupAvailability recomputes availability_daily over the configured window.
 //
 // Derived from closed and ongoing outages rather than from raw status history,
 // which is not retained. Reports read this table, so an SLA figure and an outage
 // list can never disagree.
+//
+// The hard part is not downtime, it is time that was never measured. The obvious
+// formula — up = elapsed - down — silently credits full uptime to a resource that
+// has never returned a single metric, because a resource nobody is measuring has
+// no outages. That produces a report claiming 100% availability for resources the
+// tool is not actually watching, which is worse than reporting nothing: it is a
+// confident false negative.
+//
+// So each day is attributed to one of four buckets, and availability is left NULL
+// unless the day was genuinely measured:
+//
+//	measured and working     -> up_sec
+//	measured and failing     -> down_sec        (from the outages table)
+//	intentionally stopped    -> maintenance_sec (not an outage, not uptime)
+//	never measured           -> unknown_sec     (availability_pct stays NULL)
+//
+// Evidence of measurement is a metric sample in that day, or an outage — an
+// outage is itself proof the resource was being watched, which matters because a
+// failing check produces no sample.
 func (e *Evaluator) rollupAvailability(ctx context.Context, tx pgx.Tx) (int, error) {
 	tag, err := tx.Exec(ctx,
 		`WITH days AS (
-		   SELECT d::date AS day FROM generate_series(current_date - 1, current_date, '1 day') d
+		   SELECT d::date AS day
+		     FROM generate_series(current_date - $1::int, current_date, '1 day') d
 		 ),
 		 spans AS (
 		   SELECT r.id AS resource_id, dy.day,
@@ -744,33 +774,90 @@ func (e *Evaluator) rollupAvailability(ctx context.Context, tx pgx.Tx) (int, err
 		         AND o.started_at < (dy.day + 1)::timestamptz
 		         AND coalesce(o.ended_at, now()) > dy.day::timestamptz
 		   WHERE r.deleted_at IS NULL
+		     -- A resource has no availability for a day that predates it. Without
+		     -- this, widening the window invents rows and a report then claims more
+		     -- measured days than the resource has existed for.
+		     AND dy.day >= r.created_at::date
+		   GROUP BY r.id, dy.day
+		 ),
+		 observed AS (
+		   -- Did anything actually measure this resource on this day? Joined on
+		   -- native_id because that is what the sample carries.
+		   SELECT r.id AS resource_id, dy.day,
+		          count(m.native_id) AS samples
+		   FROM resources r
+		   CROSS JOIN days dy
+		   LEFT JOIN metric_samples m
+		          ON m.native_id = r.native_id
+		         AND m.t >= dy.day::timestamptz
+		         AND m.t <  (dy.day + 1)::timestamptz
+		   WHERE r.deleted_at IS NULL
+		     AND dy.day >= r.created_at::date
 		   GROUP BY r.id, dy.day
 		 )
 		 INSERT INTO availability_daily
-		   (tenant_id, resource_id, day, up_sec, down_sec, availability_pct, outage_count, mttr_sec)
+		   (tenant_id, resource_id, day, up_sec, down_sec, maintenance_sec, unknown_sec,
+		    availability_pct, outage_count, mttr_sec)
 		 SELECT current_tenant_id(), s.resource_id, s.day,
-		        GREATEST(0, elapsed.sec - s.down_sec),
-		        s.down_sec,
-		        CASE WHEN elapsed.sec > 0
+		        CASE WHEN st.excluded OR NOT st.measured THEN 0
+		             ELSE GREATEST(0, elapsed.sec - s.down_sec) END,
+		        CASE WHEN st.excluded THEN 0 ELSE s.down_sec END,
+		        CASE WHEN st.excluded THEN elapsed.sec ELSE 0 END,
+		        CASE WHEN NOT st.excluded AND NOT st.measured THEN elapsed.sec ELSE 0 END,
+		        -- NULL rather than a number whenever the day cannot honestly be
+		        -- scored. Reports render NULL as an em dash, so an unmeasured day
+		        -- reads as "no data" instead of as a perfect score.
+		        CASE WHEN st.excluded OR NOT st.measured THEN NULL
+		             WHEN elapsed.sec > 0
 		             THEN round(100.0 * GREATEST(0, elapsed.sec - s.down_sec) / elapsed.sec, 3)
 		             ELSE NULL END,
-		        s.outage_count,
-		        CASE WHEN s.outage_count > 0 THEN s.down_sec / s.outage_count ELSE NULL END
+		        CASE WHEN st.excluded THEN 0 ELSE s.outage_count END,
+		        CASE WHEN NOT st.excluded AND s.outage_count > 0
+		             THEN s.down_sec / s.outage_count ELSE NULL END
 		 FROM spans s
+		 JOIN observed ob ON ob.resource_id = s.resource_id AND ob.day = s.day
+		 JOIN resources r ON r.id = s.resource_id
 		 CROSS JOIN LATERAL (
 		   -- Today is only partly elapsed; dividing by a full day would understate
 		   -- availability for every resource every morning.
 		   SELECT LEAST(86400, GREATEST(1, extract(epoch FROM (
 		            LEAST(now(), (s.day + 1)::timestamptz) - s.day::timestamptz))::int)) AS sec
 		 ) elapsed
+		 CROSS JOIN LATERAL (
+		   SELECT
+		     -- Suspended means deliberately stopped. Counting that as downtime
+		     -- would bury real outages under planned ones; counting it as uptime
+		     -- would claim a stopped machine was serving traffic.
+		     --
+		     -- Only the current flag is available, not a history of it, so
+		     -- suspending a resource reclassifies its last two days. The rollup
+		     -- window is two days, which bounds that to the same period.
+		     (r.suspended OR r.status = 'suspended') AS excluded,
+		     (ob.samples > 0 OR s.down_sec > 0)      AS measured
+		 ) st
 		 ON CONFLICT (tenant_id, resource_id, day) DO UPDATE SET
 		   up_sec = EXCLUDED.up_sec, down_sec = EXCLUDED.down_sec,
+		   maintenance_sec = EXCLUDED.maintenance_sec,
+		   unknown_sec = EXCLUDED.unknown_sec,
 		   availability_pct = EXCLUDED.availability_pct,
-		   outage_count = EXCLUDED.outage_count, mttr_sec = EXCLUDED.mttr_sec`)
+		   outage_count = EXCLUDED.outage_count, mttr_sec = EXCLUDED.mttr_sec`,
+		e.rollupWindow())
 	if err != nil {
 		return 0, err
 	}
 	return int(tag.RowsAffected()), nil
+}
+
+// rollupWindow clamps the configured window to something sane. Zero means the
+// field was never set, which is the normal service path.
+func (e *Evaluator) rollupWindow() int {
+	if e.RollupDays <= 0 {
+		return 1
+	}
+	if e.RollupDays > 400 {
+		return 400
+	}
+	return e.RollupDays
 }
 
 func nullIfEmpty(s string) *string {

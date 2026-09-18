@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -261,7 +262,13 @@ func clientIP(r *http.Request) string {
 		return strings.TrimSpace(xff)
 	}
 	if rip := r.Header.Get("X-Real-IP"); rip != "" {
-		return rip
+		return strings.TrimSpace(rip)
+	}
+	// RemoteAddr carries host:port. The port is not part of an address, and an
+	// inet column rejects it outright — which previously lost audit entries
+	// silently, because audit writes are deliberately non-fatal.
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
 	}
 	return r.RemoteAddr
 }

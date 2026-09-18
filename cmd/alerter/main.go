@@ -29,6 +29,8 @@ func main() {
 		interval = flag.Duration("interval", time.Minute, "evaluation interval")
 		timeout  = flag.Duration("timeout", 5*time.Minute, "maximum duration of one pass")
 		logLevel = flag.String("log-level", "info", "debug | info | warn | error")
+		rollup   = flag.Int("rollup-days", 1, "how many days back to recompute availability; "+
+			"raise it once after the rollup definition changes")
 	)
 	flag.Parse()
 
@@ -53,6 +55,9 @@ func main() {
 
 	openCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	ev, err := alert.Open(openCtx, target, *tenant, log)
+	if err == nil && ev != nil {
+		ev.RollupDays = *rollup
+	}
 	cancel()
 	if err != nil {
 		log.Error("cannot connect", "err", err)

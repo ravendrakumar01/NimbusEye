@@ -93,6 +93,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/groups", s.listGroups)
 	s.registerAccountRoutes(mux)
 	s.registerMonitorRoutes(mux)
+	s.registerReportRoutes(mux)
+	s.registerAdminRoutes(mux)
 	s.registerIngestRoutes(mux)
 	if s.auth != nil {
 		s.registerAuthRoutes(mux)
