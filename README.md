@@ -141,6 +141,60 @@ Cloud credentials are never stored in the database or the repository.
 `cloud_accounts.credentials_ref` holds a path or key id, and the collector
 resolves the secret at runtime. All cloud access is intended to be **read-only**.
 
+## Not built
+
+The reference console shows these in its navigation. They are deliberately absent
+from ours rather than greyed out: a console full of dead entries reads as broken,
+and this one is in daily use. The list lives here so removing the rows does not
+lose the information.
+
+### Home
+
+| Row | Why not |
+|---|---|
+| Help Assistant | Needs a documentation corpus to answer from |
+| Dashboards | No custom dashboard builder |
+| Capacity Planning | Needs months of history to forecast from; there are days |
+| Zia Anomaly Dashboard | No anomaly detection model |
+| Schedule IT Automation | No automation runner |
+| IT Automation Logs | Same |
+| Log Report | No log ingestion |
+
+### Whole sections
+
+| Section | State |
+|---|---|
+| APM | Needs a per-language agent. A separate product, not a feature |
+| Server | Needs a per-OS agent, same |
+| Kubernetes | Clusters are discovered and alerted on via OCI metrics; there is no in-cluster agent, so no pod or workload detail |
+| Nimbus FinOps | Database schema exists; the billing ingest does not |
+
+### Elsewhere
+
+- **Alert delivery.** The evaluator decides who should be told and writes the
+  intent to `alert_notifications`; nothing sends yet. SMTP is configured, so this
+  is the shortest path from "detects problems" to "tells somebody".
+- **AWS, Azure and GCP collectors.** The OCI one establishes the pattern; these
+  are the same shape against different APIs.
+- **VictoriaMetrics.** `metric_samples` lives in PostgreSQL, day-partitioned, and
+  is explicitly interim.
+- **Reports:** Health Trend, Forecast, Custom and Scheduled reports.
+- **Admin:** user groups, on-call schedules, business hours, tags, import and
+  export of monitors, configuration rules, bulk actions.
+- **MFA**, and a session cleanup job.
+
+### Structural, not merely unwritten
+
+These need infrastructure or agents rather than more code, and saying so is more
+useful than listing them as roadmap items:
+
+- **Synthetic transactions** need a headless browser fleet.
+- **Global check locations** would mean probe servers in many regions. The
+  reference product has over a hundred; a handful is the sane target here.
+- **Multi-tenancy** is fully modelled and enforced in the database, but the store
+  binds one tenant at startup. Selling to a second customer needs per-request
+  tenant resolution first.
+
 ## Licence
 
 Proprietary. Not for redistribution.

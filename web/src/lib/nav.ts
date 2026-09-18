@@ -68,22 +68,15 @@ export const RAIL: RailSection[] = [
     icon: HomeIcon,
     to: "/",
     items: [
-      // This order and these labels come from the reference console, not from
-      // what happens to be built. A panel that hides the unbuilt rows would
-      // misrepresent how much of the product exists; a stub with a stated reason
-      // is honest about it.
-      { label: "Help Assistant", stub: true, stubReason: "Needs a documentation corpus to answer from." },
-      { label: "Dashboards", stub: true, stubReason: "Custom dashboard builder is not built." },
+      // Only what exists. The unbuilt rows the reference console shows are listed
+      // in the README instead of being greyed out here — a console full of dead
+      // entries reads as broken rather than as unfinished, and this one is in
+      // daily use.
       { label: "Monitors", to: "/", add: true },
       { label: "Monitor Groups", to: "/groups", add: true },
-      { label: "Capacity Planning", add: true, stub: true, stubReason: "Needs months of history to forecast from; there are two days." },
       { label: "Outages", to: "/outages" },
-      { label: "Zia Anomaly Dashboard", stub: true, stubReason: "Anomaly detection model is not built." },
       { label: "Schedule Maintenance", to: "/maintenance" },
-      { label: "Schedule IT Automation", stub: true, stubReason: "No automation runner." },
-      { label: "Log Report", stub: true, stubReason: "Log ingestion is not built." },
       { label: "Alert Logs", to: "/alert-logs" },
-      { label: "IT Automation Logs", stub: true, stubReason: "No automation runner." },
       { label: "SLO", to: "/slo", add: true },
     ],
   },
