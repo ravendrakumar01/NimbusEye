@@ -406,8 +406,12 @@ function GenericPanel({ section }: { section: RailSection }) {
                 // Present in the original but not implemented here. Shown greyed
                 // out rather than hidden, so the gap is visible instead of
                 // pretending the feature does not exist.
+                //
+                // The reason is in the tooltip, because a greyed row with no
+                // explanation reads as a bug or a permissions problem. Naming why
+                // turns it into a known boundary.
                 <span
-                  title="Not implemented yet"
+                  title={item.stubReason ? `Not built: ${item.stubReason}` : "Not implemented yet"}
                   className="flex cursor-not-allowed items-center px-3 py-[7px] text-[13px] text-panel-muted/60"
                 >
                   {inner}

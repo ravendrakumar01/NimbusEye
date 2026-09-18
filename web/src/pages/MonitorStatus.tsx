@@ -13,7 +13,9 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Filter, Info, Plus, RefreshCw, Search } from "lucide-react";
 import { api } from "../lib/api";
 import type { Status } from "../lib/api";
+import { useState } from "react";
 import { useAsync, useDebounced, usePolling } from "../lib/hooks";
+import { FilterPanel, NOCButton, NOCView } from "../components/MonitorFilters";
 import {
   CATEGORY_LABEL,
   STATUS_LABEL,
@@ -76,6 +78,18 @@ export function MonitorStatus({
   const page = Math.max(1, Number(params.get("page") ?? "1") || 1);
 
   const q = useDebounced(search, 300);
+  const [showFilters, setShowFilters] = useState(false);
+  const [noc, setNoc] = useState(false);
+
+  // Shown on the funnel icon so an active filter is visible without opening it.
+  // A filtered list that looks unfiltered is how people conclude monitors have
+  // vanished.
+  const filterCount =
+    (params.get("provider") ?? "").split(",").filter(Boolean).length +
+    (params.get("type") ?? "").split(",").filter(Boolean).length +
+    (params.get("status") ?? "").split(",").filter(Boolean).length +
+    (params.get("region") ?? "").split(",").filter(Boolean).length +
+    (params.get("group") ? 1 : 0);
 
   const scope = providerFromUrl
     ? urlProvider
@@ -91,6 +105,26 @@ export function MonitorStatus({
     setParams(next, { replace: true });
   }
 
+  /**
+   * Toggles one value inside a comma-separated parameter.
+   *
+   * Filters live in the URL rather than in component state so a filtered view can
+   * be bookmarked and pasted into a ticket. The useful views are the ones people
+   * come back to, and state that dies on reload cannot be one of them.
+   */
+  function setMulti(key: string, value: string) {
+    const current = (params.get(key) ?? "").split(",").filter(Boolean);
+    const next = current.includes(value)
+      ? current.filter((v) => v !== value)
+      : [...current, value];
+    setParam(key, next.length ? next.join(",") : undefined);
+  }
+
+  const csv = (key: string) => {
+    const v = (params.get(key) ?? "").split(",").filter(Boolean);
+    return v.length ? v : undefined;
+  };
+
   const filters = useAsync(() => api.filters(), []);
 
   const list = useAsync(
@@ -98,13 +132,24 @@ export function MonitorStatus({
       api.resources({
         q: q || undefined,
         provider: scope && scope.length ? scope : undefined,
-        type: type ? [type] : undefined,
-        status: status ? [status] : undefined,
+        type: csv("type"),
+        status: csv("status") as Status[] | undefined,
+        region: csv("region"),
+        group: params.get("group") ?? undefined,
         sort,
         page,
         page_size: PAGE_SIZE,
       }),
-    [q, scope?.join(","), type, status, sort, page],
+    [
+      q,
+      scope?.join(","),
+      params.get("type"),
+      params.get("status"),
+      params.get("region"),
+      params.get("group"),
+      sort,
+      page,
+    ],
   );
 
   usePolling(list.reload, 60_000);
@@ -166,11 +211,25 @@ export function MonitorStatus({
             </label>
             <button
               type="button"
-              className="grid size-7 place-items-center rounded text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-              aria-label="Filters"
+              onClick={() => setShowFilters((v) => !v)}
+              aria-expanded={showFilters}
+              title="Filter by status, provider, type, region or group"
+              className={cx(
+                "relative grid size-7 place-items-center rounded",
+                showFilters || filterCount > 0
+                  ? "bg-brand-50 text-brand-600"
+                  : "text-slate-400 hover:bg-slate-100 hover:text-slate-600",
+              )}
             >
               <Filter className="size-4" aria-hidden="true" />
+              {filterCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 grid size-3.5 place-items-center rounded-full bg-brand-500 text-[9px] font-semibold text-white">
+                  {filterCount}
+                </span>
+              )}
+              <span className="sr-only">Filters</span>
             </button>
+            <NOCButton onClick={() => setNoc(true)} />
             <PillGroup
               label="Polling window"
               value={win}
@@ -186,6 +245,26 @@ export function MonitorStatus({
           </>
         }
       />
+
+      {showFilters && (
+        <FilterPanel
+          filters={filters.data}
+          params={params}
+          setMulti={setMulti}
+          setOne={setParam}
+          onClose={() => setShowFilters(false)}
+        />
+      )}
+
+      {/* A full-screen wall, rendered above the page rather than inside it so the
+          shell chrome does not compete with it from across a room. */}
+      {noc && (
+        <NOCView
+          resources={list.data?.items ?? []}
+          total={list.data?.total ?? 0}
+          onClose={() => setNoc(false)}
+        />
+      )}
 
       {/* Ring row and counters */}
       <div className="flex flex-wrap items-stretch gap-3 px-5 py-4">

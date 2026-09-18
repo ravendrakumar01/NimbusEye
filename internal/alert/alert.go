@@ -513,11 +513,16 @@ func humanBytes(v float64) string {
 // ('open','acknowledged') is what makes this safe: at most one live alert per
 // condition per resource, so a flapping metric updates one row.
 func (e *Evaluator) upsertAlert(ctx context.Context, tx pgx.Tx, c condition) (opened, updated int, err error) {
-	var existingID, existingSeverity string
+	// A suppressed alert is the same alert, not a different one. Leaving it out of
+	// this lookup meant that when a maintenance window ended, a second row was
+	// inserted for a condition that already had one — so the same problem appeared
+	// twice in the Alarms list and the suppressed row was never resolved.
+	var existingID, existingSeverity, existingState string
 	err = tx.QueryRow(ctx,
-		`SELECT id::text, severity FROM alerts
-		 WHERE dedup_key = $1 AND state IN ('open','acknowledged')`, c.dedupKey).
-		Scan(&existingID, &existingSeverity)
+		`SELECT id::text, severity, state FROM alerts
+		 WHERE dedup_key = $1 AND state IN ('open','acknowledged','suppressed')
+		   AND resolved_at IS NULL`, c.dedupKey).
+		Scan(&existingID, &existingSeverity, &existingState)
 
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
@@ -542,12 +547,22 @@ func (e *Evaluator) upsertAlert(ctx context.Context, tx pgx.Tx, c condition) (op
 		if rank(c.severity) < rank(existingSeverity) {
 			severity = c.severity
 		}
+		// Coming out of a maintenance window: the condition still holds and nothing
+		// is suppressing it any more, so the alert becomes live again and the window
+		// reference is cleared. Counted as opened, because from an operator's point
+		// of view this is the moment it starts demanding attention.
+		reopened := existingState == "suppressed"
 		if _, err := tx.Exec(ctx,
 			`UPDATE alerts SET observed_value = $2, threshold_value = $3, message = $4,
-			        severity = $5, poll_count = poll_count + 1, updated_at = now()
+			        severity = $5, poll_count = poll_count + 1, updated_at = now(),
+			        state = CASE WHEN state = 'suppressed' THEN 'open' ELSE state END,
+			        suppressed_by_maintenance = NULL
 			 WHERE id = $1::uuid`,
 			existingID, c.observedValue, c.thresholdValue, c.message, severity); err != nil {
 			return 0, 0, err
+		}
+		if reopened {
+			return 1, 0, nil
 		}
 		return 0, 1, nil
 	}
@@ -571,15 +586,33 @@ func rank(sev string) int {
 // The row is written rather than skipped so post-maintenance review can see what
 // would have fired; it just never notifies anyone.
 func (e *Evaluator) suppress(ctx context.Context, tx pgx.Tx, c condition, windowID string) (int, error) {
-	var exists bool
-	if err := tx.QueryRow(ctx,
-		`SELECT EXISTS (SELECT 1 FROM alerts WHERE dedup_key = $1
-		                AND state = 'suppressed' AND resolved_at IS NULL)`, c.dedupKey).
-		Scan(&exists); err != nil {
+	// An alert that was already open when the window started is the same alert.
+	// Checking only for an existing *suppressed* row meant a second row was
+	// inserted beside the open one, so during maintenance the same problem was
+	// listed twice — once notifying and once not.
+	var existingID, existingState string
+	err := tx.QueryRow(ctx,
+		`SELECT id::text, state FROM alerts
+		 WHERE dedup_key = $1 AND state IN ('open','acknowledged','suppressed')
+		   AND resolved_at IS NULL`, c.dedupKey).Scan(&existingID, &existingState)
+	switch {
+	case err == nil:
+		if _, err := tx.Exec(ctx,
+			`UPDATE alerts SET state = 'suppressed', suppressed_by_maintenance = $2::uuid,
+			        observed_value = $3, threshold_value = $4, message = $5,
+			        poll_count = poll_count + 1, updated_at = now()
+			 WHERE id = $1::uuid`,
+			existingID, windowID, c.observedValue, c.thresholdValue, c.message); err != nil {
+			return 0, err
+		}
+		// Only count it as newly suppressed the first time, so a long window does
+		// not inflate the figure on every pass.
+		if existingState == "suppressed" {
+			return 0, nil
+		}
+		return 1, nil
+	case !errors.Is(err, pgx.ErrNoRows):
 		return 0, err
-	}
-	if exists {
-		return 0, nil
 	}
 	if _, err := tx.Exec(ctx,
 		`INSERT INTO alerts (tenant_id, resource_id, dedup_key, severity, state,
@@ -622,7 +655,9 @@ func (e *Evaluator) openOutage(ctx context.Context, tx pgx.Tx, c condition) (int
 func (e *Evaluator) resolveRecovered(ctx context.Context, tx pgx.Tx, firing map[string]condition) (resolved, closed int, err error) {
 	rows, err := tx.Query(ctx,
 		`SELECT id::text, dedup_key, resource_id::text, severity FROM alerts
-		 WHERE state IN ('open','acknowledged')`)
+		 -- Suppressed counts as live. Excluding it left an alert stuck in
+		 -- suppression for good once its condition cleared during a window.
+		 WHERE state IN ('open','acknowledged','suppressed') AND resolved_at IS NULL`)
 	if err != nil {
 		return 0, 0, err
 	}

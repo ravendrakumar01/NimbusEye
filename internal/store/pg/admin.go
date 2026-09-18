@@ -40,6 +40,13 @@ type ErrInvalid struct{ Msg string }
 
 func (e ErrInvalid) Error() string { return e.Msg }
 
+// invalid builds a user-visible validation error.
+//
+// Deliberately a plain printf wrapper so `go vet` keeps checking every format
+// string passed to it. That check earns its keep: it caught two messages here
+// containing a literal percent sign, which Sprintf was reading as a broken verb.
+// A literal percent must be written %% — which is mildly awkward, and much better
+// than losing the analysis on every other call site.
 func invalid(format string, a ...any) error {
 	return ErrInvalid{Msg: fmt.Sprintf(format, a...)}
 }

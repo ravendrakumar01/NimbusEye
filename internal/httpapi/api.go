@@ -95,6 +95,7 @@ func (s *Server) Handler() http.Handler {
 	s.registerMonitorRoutes(mux)
 	s.registerReportRoutes(mux)
 	s.registerAdminRoutes(mux)
+	s.registerHomeRoutes(mux)
 	s.registerIngestRoutes(mux)
 	if s.auth != nil {
 		s.registerAuthRoutes(mux)

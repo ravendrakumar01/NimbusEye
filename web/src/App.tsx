@@ -17,6 +17,11 @@ import { AddMonitor } from "./pages/AddMonitor";
 import { GettingStarted } from "./pages/GettingStarted";
 import { CloudAccountDetail } from "./pages/CloudAccountDetail";
 import { Reports } from "./pages/Reports";
+import { Outages } from "./pages/Outages";
+import { Maintenance } from "./pages/Maintenance";
+import { SLO } from "./pages/SLO";
+import { AlertLogs } from "./pages/AlertLogs";
+import { MonitorGroups } from "./pages/MonitorGroups";
 import { AdminThresholds } from "./pages/AdminThresholds";
 import { AdminNotifications } from "./pages/AdminNotifications";
 import { AdminChannels } from "./pages/AdminChannels";
@@ -194,25 +199,15 @@ export default function App() {
             />
           }
         />
-        <Route
-          path="groups"
-          element={
-            <Placeholder
-              title="Monitor Groups"
-              summary="Grouping and health rollup. The schema supports rule-matched dynamic membership, which is what keeps groups accurate at 2000 resources."
-              planned={[
-                "Nested groups and subgroups",
-                "Rule-based dynamic membership by tag, account or type",
-                "Worst-child, percentage and count rollup strategies",
-                "Group-level threshold and notification defaults",
-              ]}
-            />
-          }
-        />
+        <Route path="groups" element={<MonitorGroups />} />
         <Route path="reports" element={<Reports />} />
-        {/* Outage history is a tab of the reports page rather than a separate
-            screen: the same rows answer both questions. */}
-        <Route path="outages" element={<Navigate to="/reports" replace />} />
+        {/* Outages has its own screen under Home as well as a reports tab. The
+            data is the same; the questions differ. Home asks "what is broken
+            now", reports ask "how did the period go". */}
+        <Route path="outages" element={<Outages />} />
+        <Route path="maintenance" element={<Maintenance />} />
+        <Route path="slo" element={<SLO />} />
+        <Route path="alert-logs" element={<AlertLogs />} />
         {/* Admin landing goes straight to cloud accounts: it is the only Admin
             area that is actually implemented. */}
         <Route path="admin" element={<Navigate to="/admin/cloud-accounts" replace />} />

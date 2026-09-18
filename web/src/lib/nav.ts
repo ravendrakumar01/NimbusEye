@@ -38,6 +38,14 @@ export interface PanelItem {
   badge?: string;
   /** Renders greyed out: visible in the original but not implemented here. */
   stub?: boolean;
+  /**
+   * Why it is not built. Shown on hover.
+   *
+   * A greyed row with no explanation reads as a bug or a permissions problem.
+   * Stating the reason turns it into a known boundary, which is the difference
+   * between an unfinished product and an untrustworthy one.
+   */
+  stubReason?: string;
 }
 
 export interface RailSection {
@@ -60,20 +68,23 @@ export const RAIL: RailSection[] = [
     icon: HomeIcon,
     to: "/",
     items: [
-      { label: "Getting Started", to: "/getting-started" },
-      { label: "Dashboards", stub: true },
+      // This order and these labels come from the reference console, not from
+      // what happens to be built. A panel that hides the unbuilt rows would
+      // misrepresent how much of the product exists; a stub with a stated reason
+      // is honest about it.
+      { label: "Help Assistant", stub: true, stubReason: "Needs a documentation corpus to answer from." },
+      { label: "Dashboards", stub: true, stubReason: "Custom dashboard builder is not built." },
       { label: "Monitors", to: "/", add: true },
-      { label: "Add Monitor", to: "/add-monitor" },
       { label: "Monitor Groups", to: "/groups", add: true },
-      { label: "Capacity Planning", add: true, stub: true },
+      { label: "Capacity Planning", add: true, stub: true, stubReason: "Needs months of history to forecast from; there are two days." },
       { label: "Outages", to: "/outages" },
-      { label: "Zia Anomaly Dashboard", stub: true },
-      { label: "Schedule Maintenance", stub: true },
-      { label: "Schedule IT Automation", stub: true },
-      { label: "Log Report", stub: true },
-      { label: "Alert Logs", stub: true },
-      { label: "IT Automation Logs", stub: true },
-      { label: "SLO", add: true, stub: true },
+      { label: "Zia Anomaly Dashboard", stub: true, stubReason: "Anomaly detection model is not built." },
+      { label: "Schedule Maintenance", to: "/maintenance" },
+      { label: "Schedule IT Automation", stub: true, stubReason: "No automation runner." },
+      { label: "Log Report", stub: true, stubReason: "Log ingestion is not built." },
+      { label: "Alert Logs", to: "/alert-logs" },
+      { label: "IT Automation Logs", stub: true, stubReason: "No automation runner." },
+      { label: "SLO", to: "/slo", add: true },
     ],
   },
   {

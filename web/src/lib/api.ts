@@ -710,6 +710,96 @@ export interface AuditPage {
   actions?: string[];
 }
 
+/* ---------------------------------------------------------------------------
+ * Home section
+ * ------------------------------------------------------------------------- */
+
+export interface MaintenanceWindow {
+  id: string;
+  display_name: string;
+  resource_ids: string[] | null;
+  group_ids: string[] | null;
+  starts_at: string;
+  ends_at: string;
+  recurrence?: string;
+  suppress_alerts: boolean;
+  exclude_from_sla: boolean;
+  created_by?: string;
+  created_at: string;
+  /** Derived from the clock: scheduled | active | finished. */
+  state: string;
+  resource_count: number;
+  sample_names?: string[];
+}
+
+export interface SLATarget {
+  id: string;
+  display_name: string;
+  target_pct: number;
+  period: string;
+  resource_ids: string[] | null;
+  group_ids: string[] | null;
+  created_at: string;
+  resource_count: number;
+  /** The target restated as time, which is far easier to sanity check. */
+  allowed_down_sec_per_day: number;
+}
+
+export interface MonitorGroup {
+  id: string;
+  display_name: string;
+  description?: string;
+  health_strategy: string;
+  health_threshold: number | null;
+  created_at: string;
+  member_count: number;
+  up: number;
+  down: number;
+  trouble: number;
+  critical: number;
+  unknown: number;
+  suspended: number;
+  health: string;
+}
+
+export interface AlertLogEntry {
+  id: number;
+  state: string;
+  alert_id: string;
+  severity: string;
+  metric_key?: string;
+  resource_id: string;
+  display_name: string;
+  channel_id?: string;
+  channel_name?: string;
+  channel_type?: string;
+  recipient?: string;
+  level: number;
+  attempts: number;
+  last_error?: string;
+  sent_at: string | null;
+  created_at: string;
+}
+
+export interface AlertLogPage {
+  entries: AlertLogEntry[];
+  sent: number;
+  failed: number;
+  skipped: number;
+  pending: number;
+  next_before: number;
+  /** False when no channel is enabled, which is why rows read "skipped". */
+  delivery_configured: boolean;
+}
+
+export interface OutagePage {
+  rows: OutageReportRow[];
+  total: number;
+  ongoing: number;
+  mean_mttr_sec: number | null;
+  total_down_sec: number;
+}
+
 export const api = {
   /** Public: reports whether a session exists, without treating absence as an error. */
   session: () => get<SessionState>("/auth/session"),
@@ -796,6 +886,30 @@ export const api = {
 
   auditLog: (q: { action?: string; user?: string; before?: number; limit?: number }) =>
     get<AuditPage>("/admin/audit", q),
+
+  /* Home section. */
+  maintenanceWindows: () =>
+    get<{ windows: MaintenanceWindow[]; active: number }>("/maintenance"),
+  createMaintenance: (body: Record<string, unknown>) =>
+    send<MaintenanceWindow>("/maintenance", "POST", body),
+  deleteMaintenance: (id: string) => send<{ deleted: boolean }>(`/maintenance/${id}`, "DELETE"),
+
+  slaTargets: () => get<{ targets: SLATarget[]; count: number }>("/slo"),
+  createSLATarget: (body: Record<string, unknown>) => send<SLATarget>("/slo", "POST", body),
+  deleteSLATarget: (id: string) => send<{ deleted: boolean }>(`/slo/${id}`, "DELETE"),
+
+  monitorGroups: () => get<{ items: MonitorGroup[] }>("/groups"),
+  createGroup: (body: Record<string, unknown>) => send<MonitorGroup>("/groups", "POST", body),
+  updateGroup: (id: string, body: Record<string, unknown>) =>
+    send<MonitorGroup>(`/groups/${id}`, "PATCH", body),
+  deleteGroup: (id: string) => send<{ deleted: boolean }>(`/groups/${id}`, "DELETE"),
+  groupMembers: (id: string) =>
+    get<{ members: Resource[]; count: number }>(`/groups/${id}/members`),
+
+  alertLogs: (q: { state?: string; before?: number; limit?: number }) =>
+    get<AlertLogPage>("/alert-logs", q),
+  outageList: (q: { ongoing?: 1; days?: number; limit?: number; offset?: number }) =>
+    get<OutagePage>("/outage-list", q),
   filters: () => get<Filters>("/catalog/filters"),
   resourceTypes: (provider?: string) =>
     get<{ items: ResourceType[]; total: number }>("/catalog/resource-types", { provider }),
