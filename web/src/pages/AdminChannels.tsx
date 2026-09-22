@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useState } from "react";
-import { AlertTriangle, Check, Plus, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { api } from "../lib/api";
 import type { NotificationChannel } from "../lib/api";
@@ -163,10 +163,148 @@ function NewChannel({ onCreated, onCancel }: { onCreated: () => void; onCancel: 
   );
 }
 
+/**
+ * Inline edit for an existing channel.
+ *
+ * Separate from the create form because the two differ in what they may change:
+ * the type is fixed once a channel exists. The config shape depends on it, so
+ * changing it in place would leave a Slack channel holding an email address — the
+ * server refuses it, and offering a control the server rejects is worse than not
+ * offering it.
+ */
+function EditChannel({
+  channel,
+  onSaved,
+  onCancel,
+}: {
+  channel: NotificationChannel;
+  onSaved: () => void;
+  onCancel: () => void;
+}) {
+  const info = typeInfo(channel.channel_type);
+  const needsSecret = info?.secret ?? false;
+
+  const [name, setName] = useState(channel.display_name);
+  const [address, setAddress] = useState((channel.config.address as string) ?? "");
+  const [phone, setPhone] = useState((channel.config.phone as string) ?? "");
+  const [secretRef, setSecretRef] = useState(channel.secret_ref ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    // Start from the existing config so settings this form does not show are not
+    // silently dropped on save.
+    const config: Record<string, unknown> = { ...channel.config };
+    if (channel.channel_type === "email") config.address = address.trim();
+    if (channel.channel_type === "sms" || channel.channel_type === "voice") {
+      config.phone = phone.trim();
+    }
+    try {
+      await api.updateChannel(channel.id, {
+        display_name: name.trim(),
+        config,
+        secret_ref: secretRef.trim(),
+      });
+      onSaved();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [channel, name, address, phone, secretRef, onSaved]);
+
+  return (
+    <div className="space-y-3 bg-slate-50/80 px-3 py-3">
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-[12px] text-slate-500">Name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="w-56 rounded border border-slate-300 px-2 py-1 text-[13px]"
+          />
+        </label>
+        <div className="flex flex-col gap-1">
+          <span className="text-[12px] text-slate-500">Type</span>
+          <span
+            className="rounded border border-slate-200 bg-white px-2 py-1 text-[13px] text-slate-500"
+            title="A channel's type cannot be changed, because the settings below depend on it. Delete it and create the new one."
+          >
+            {info?.label ?? channel.channel_type}
+          </span>
+        </div>
+
+        {channel.channel_type === "email" && (
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] text-slate-500">Address</span>
+            <input
+              type="email"
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder="ops@example.com"
+              className="w-72 rounded border border-slate-300 px-2 py-1 text-[13px]"
+            />
+          </label>
+        )}
+
+        {(channel.channel_type === "sms" || channel.channel_type === "voice") && (
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] text-slate-500">Phone number</span>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              className="w-56 rounded border border-slate-300 px-2 py-1 text-[13px]"
+            />
+          </label>
+        )}
+      </div>
+
+      {needsSecret && (
+        <div className="space-y-1.5">
+          <label className="flex flex-col gap-1">
+            <span className="text-[12px] text-slate-500">
+              Path to the file holding the URL or token
+            </span>
+            <input
+              value={secretRef}
+              onChange={(e) => setSecretRef(e.target.value)}
+              placeholder="/etc/nimbuseye/creds/slack.secret"
+              className="w-full max-w-xl rounded border border-slate-300 px-2 py-1 font-mono text-[13px]"
+            />
+          </label>
+          <p className="text-[11px] text-slate-500">
+            Changing this path clears the channel's verified state, because nothing has
+            been delivered through the new credential yet.
+          </p>
+        </div>
+      )}
+
+      {error && (
+        <InfoBanner tone="warn">
+          <span className="flex items-start gap-1.5">
+            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+            {error}
+          </span>
+        </InfoBanner>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Button variant="primary" disabled={busy || !name.trim()} onClick={submit}>
+          {busy ? "Saving…" : "Save changes"}
+        </Button>
+        <Button onClick={onCancel}>Cancel</Button>
+      </div>
+    </div>
+  );
+}
+
 export function AdminChannels() {
   const { user } = useAuth();
   const canEdit = user.role === "owner" || user.role === "admin";
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const [busyID, setBusyID] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const state = useAsync(() => api.channels(), []);
@@ -269,6 +407,7 @@ export function AdminChannels() {
                       (c.config.channel as string) ??
                       "";
                     return (
+                      <>
                       <tr key={c.id} className={i % 2 ? "bg-slate-50/60" : undefined}>
                         <td className="px-3 py-2">
                           <div className="text-[13px] font-medium text-slate-800">{c.display_name}</div>
@@ -322,6 +461,14 @@ export function AdminChannels() {
                               <Button
                                 size="xs"
                                 disabled={busyID === c.id}
+                                onClick={() => setEditing(editing === c.id ? null : c.id)}
+                              >
+                                <Pencil className="size-3.5" aria-hidden="true" />
+                                Edit
+                              </Button>
+                              <Button
+                                size="xs"
+                                disabled={busyID === c.id}
                                 onClick={() => act(c.id, () => api.updateChannel(c.id, { enabled: !c.enabled }))}
                               >
                                 {c.enabled ? "Disable" : "Enable"}
@@ -339,6 +486,21 @@ export function AdminChannels() {
                           )}
                         </td>
                       </tr>
+                        {editing === c.id && (
+                          <tr>
+                            <td colSpan={6} className="border-y border-slate-200 p-0">
+                              <EditChannel
+                                channel={c}
+                                onSaved={() => {
+                                  setEditing(null);
+                                  state.reload();
+                                }}
+                                onCancel={() => setEditing(null)}
+                              />
+                            </td>
+                          </tr>
+                        )}
+                      </>
                     );
                   })}
                 </tbody>
