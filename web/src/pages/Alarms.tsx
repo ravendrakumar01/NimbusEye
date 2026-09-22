@@ -6,11 +6,11 @@
  * alarms are one click away but never in the way.
  */
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { Link } from "react-router-dom";
 import { BellOff, Check, Search, UserCheck } from "lucide-react";
-import { ApiError, api } from "../lib/api";
-import type { AlarmState, Severity } from "../lib/api";
+import { api } from "../lib/api";
+import type { Alarm, AlarmState, Severity } from "../lib/api";
 import { useAsync, useDebounced, usePolling } from "../lib/hooks";
 import { absolute, cx, duration, metricValue, num, since } from "../lib/format";
 import {
@@ -23,6 +23,16 @@ import {
   SeverityBadge,
   Spinner,
 } from "../components/ui";
+import {
+  AlarmActions,
+  DeliveryState,
+  LiveDot,
+  MutePanel,
+  NotePanel,
+  RCANotes,
+  ResolvePanel,
+  isMuted,
+} from "../components/AlarmActions";
 
 const PAGE_SIZE = 25;
 
@@ -55,25 +65,44 @@ export function Alarms() {
 
   usePolling(alarms.reload, 30_000, acking === null);
 
-  async function acknowledge(id: string) {
-    setAcking(id);
-    setNotice(null);
-    try {
-      await api.acknowledge(id, "demo-user");
-      setNotice({ kind: "ok", text: "Alarm acknowledged." });
-      alarms.reload();
-    } catch (e) {
-      const msg =
-        e instanceof ApiError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : "Could not acknowledge the alarm.";
-      setNotice({ kind: "err", text: msg });
-    } finally {
-      setAcking(null);
-    }
-  }
+  const [live] = useState(true);
+  const [muting, setMuting] = useState<Alarm[] | null>(null);
+  const [resolving, setResolving] = useState<Alarm | null>(null);
+  const [noting, setNoting] = useState<Alarm | null>(null);
+
+  /**
+   * Runs one alarm action and refreshes.
+   *
+   * Shared so every action reports failure the same way. An action that fails
+   * silently leaves the operator believing an alarm is muted when it is not, which
+   * is worse than the alarm.
+   */
+  // Open, unmuted alarms in the current view — what "mute all in view" applies to.
+  // Scoped to the view on purpose: a button that silences alarms you cannot see is
+  // how a whole estate goes quiet by accident.
+  const openAlarms = (alarms.data?.items ?? []).filter(
+    (a) => a.state !== "resolved" && !isMuted(a),
+  );
+
+  const act = useCallback(
+    async (id: string, fn: () => Promise<unknown>) => {
+      setAcking(id);
+      try {
+        await fn();
+        setNotice(null);
+        alarms.reload();
+      } catch (e) {
+        setNotice({
+          kind: "err",
+          text: e instanceof Error ? e.message : "The action failed.",
+        });
+      } finally {
+        setAcking(null);
+      }
+    },
+    [alarms],
+  );
+
 
   function resetFilters() {
     setSeverity("");
@@ -106,11 +135,22 @@ export function Alarms() {
         </div>
       )}
 
+      {muting && (
+        <MutePanel
+          alarms={muting}
+          onDone={() => {
+            setMuting(null);
+            alarms.reload();
+          }}
+          onCancel={() => setMuting(null)}
+        />
+      )}
+
       <PageHeader
         title={
           <>
             Alarms
-            <span className="text-[11px] font-normal text-st-up">Live</span>
+            <LiveDot active={live} />
           </>
         }
         meta={
@@ -120,6 +160,19 @@ export function Alarms() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Link to="/maintenance">
+              <Button size="xs" title="Planned work: suppress alerts and exclude the downtime">
+                Schedule Maintenance
+              </Button>
+            </Link>
+            <Button
+              size="xs"
+              disabled={!alarms.data || openAlarms.length === 0}
+              title="Mute every open alarm currently in view"
+              onClick={() => setMuting(openAlarms)}
+            >
+              Mute all in view
+            </Button>
             <label className="relative">
               <span className="sr-only">Search alarms</span>
               <Search
@@ -228,6 +281,9 @@ export function Alarms() {
                       State
                     </th>
                     <th scope="col" className="px-4 py-2 text-right font-medium">
+                      Delivery
+                    </th>
+                    <th scope="col" className="px-4 py-2 text-right font-medium">
                       Action
                     </th>
                   </tr>
@@ -237,6 +293,7 @@ export function Alarms() {
                     const end = a.resolved_at ? Date.parse(a.resolved_at) : Date.now();
                     const dur = (end - Date.parse(a.opened_at)) / 1000;
                     return (
+                      <>
                       <tr key={a.id} className="align-top hover:bg-slate-50">
                         <td className="px-4 py-2.5">
                           <SeverityBadge severity={a.severity} />
@@ -293,20 +350,53 @@ export function Alarms() {
                             <span className="text-xs font-medium text-st-down">Open</span>
                           )}
                         </td>
+                        <td className="px-3 py-2.5">
+                          <DeliveryState alarm={a} />
+                        </td>
                         <td className="px-4 py-2.5 text-right">
-                          {a.state === "open" ? (
-                            <Button
-                              size="xs"
-                              onClick={() => acknowledge(a.id)}
-                              disabled={acking === a.id}
-                            >
-                              {acking === a.id ? "Working…" : "Acknowledge"}
-                            </Button>
-                          ) : (
-                            <span className="text-xs text-slate-400">—</span>
-                          )}
+                          <AlarmActions
+                            alarm={a}
+                            busy={acking === a.id}
+                            onAction={(fn) => act(a.id, fn)}
+                            onMute={() => setMuting([a])}
+                            onResolve={() => setResolving(a)}
+                            onNote={() => setNoting(a)}
+                          />
                         </td>
                       </tr>
+                      {(resolving?.id === a.id || noting?.id === a.id ||
+                        (a.rca && a.rca.length > 0)) && (
+                        <tr key={`${a.id}-detail`}>
+                          <td colSpan={9} className="border-b border-slate-200 p-0">
+                            {a.rca && a.rca.length > 0 && (
+                              <div className="px-3 py-1.5">
+                                <RCANotes alarm={a} />
+                              </div>
+                            )}
+                            {resolving?.id === a.id && (
+                              <ResolvePanel
+                                alarm={a}
+                                onDone={() => {
+                                  setResolving(null);
+                                  alarms.reload();
+                                }}
+                                onCancel={() => setResolving(null)}
+                              />
+                            )}
+                            {noting?.id === a.id && (
+                              <NotePanel
+                                alarm={a}
+                                onDone={() => {
+                                  setNoting(null);
+                                  alarms.reload();
+                                }}
+                                onCancel={() => setNoting(null)}
+                              />
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </>
                     );
                   })}
                 </tbody>

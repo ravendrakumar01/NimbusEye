@@ -64,6 +64,16 @@ export interface Alarm {
   acknowledged_by?: string;
   resolved_at?: string;
   escalation_level: number;
+
+  /** Set while delivery is deliberately suppressed. The alarm stays open. */
+  muted_until?: string;
+  mute_reason?: string;
+  /** Names the maintenance window silencing this alarm, if any. */
+  suppressed_by_maintenance?: string;
+  rca?: { note: string; author: string; at: string }[];
+  /** How many notifications have actually been delivered for this alarm. */
+  notified: number;
+  last_notified_at?: string;
 }
 
 export interface Outage {
@@ -1036,6 +1046,16 @@ export const api = {
 
   alarms: (q: AlarmQuery = {}) =>
     get<Page<Alarm>>("/alarms", { ...q, all: q.all ? 1 : undefined }),
+
+  muteAlarm: (id: string, minutes: number, reason: string) =>
+    send<Alarm>(`/alarms/${id}/mute`, "POST", { minutes, reason }),
+  unmuteAlarm: (id: string) => send<Alarm>(`/alarms/${id}/unmute`, "POST", {}),
+  resolveAlarm: (id: string, reason: string) =>
+    send<Alarm>(`/alarms/${id}/resolve`, "POST", { reason }),
+  annotateAlarm: (id: string, note: string) =>
+    send<Alarm>(`/alarms/${id}/rca`, "POST", { note }),
+  alarmNotifications: (id: string) =>
+    get<{ entries: AlertLogEntry[]; count: number }>(`/alarms/${id}/notifications`),
 
   acknowledge: (id: string, user?: string) =>
     request<Alarm>(`${BASE}/alarms/${id}/acknowledge`, {

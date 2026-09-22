@@ -15,10 +15,12 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
 	"nimbuseye/internal/alert"
+	"nimbuseye/internal/mail"
 )
 
 func main() {
@@ -65,6 +67,36 @@ func main() {
 	}
 	defer ev.Close()
 
+	// The same relay the API uses. Configured here rather than passed in because the
+	// alerter is what sends: an alert that is decided and never delivered is the
+	// failure this whole path exists to prevent.
+	var sender *alert.Sender
+	if host := os.Getenv("NIMBUSEYE_SMTP_HOST"); host != "" {
+		port := 587
+		if v := os.Getenv("NIMBUSEYE_SMTP_PORT"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				port = n
+			}
+		}
+		m, err := mail.New(mail.Config{
+			Host:         host,
+			Port:         port,
+			User:         os.Getenv("NIMBUSEYE_SMTP_USER"),
+			PasswordFile: os.Getenv("NIMBUSEYE_SMTP_PASSWORD_FILE"),
+			From:         os.Getenv("NIMBUSEYE_SMTP_FROM"),
+			FromName:     os.Getenv("NIMBUSEYE_SMTP_FROM_NAME"),
+			STARTTLS:     os.Getenv("NIMBUSEYE_SMTP_STARTTLS") != "false",
+		})
+		if err != nil {
+			log.Error("SMTP is configured but unusable", "err", err)
+			os.Exit(1)
+		}
+		sender = alert.NewSender(m, os.Getenv("NIMBUSEYE_BASE_URL"))
+		log.Info("alert delivery enabled", "host", host, "port", port, "from", m.From())
+	} else {
+		log.Warn("no SMTP relay configured: alerts will be recorded and not delivered")
+	}
+
 	runOnce := func() error {
 		runCtx, cancel := context.WithTimeout(ctx, *timeout)
 		defer cancel()
@@ -83,6 +115,17 @@ func main() {
 			"outages_opened", rep.Outages, "outages_closed", rep.Closed,
 			"notifications_queued", rep.Notified, "rollup_rows", rep.RollupDays,
 			"took", took.String())
+
+		// Delivery runs after the decision, in the same pass. Failures are recorded
+		// per message and never fail the pass: one unreachable channel must not stop
+		// evaluation.
+		sent, failed, derr := ev.Deliver(runCtx, sender)
+		if derr != nil {
+			log.Error("delivery pass failed", "err", derr)
+		}
+		if sent > 0 || failed > 0 {
+			log.Info("notifications delivered", "sent", sent, "failed", failed)
+		}
 		return nil
 	}
 

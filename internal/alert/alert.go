@@ -284,6 +284,14 @@ func (e *Evaluator) Run(ctx context.Context) (Report, error) {
 		}
 		rep.Notified = queued
 
+		// Recoveries go to whoever heard about the problem. Queued in the same
+		// pass so a resolve and its message cannot end up in different states.
+		recovered, err := e.queueRecoveries(ctx, tx)
+		if err != nil {
+			return fmt.Errorf("queue recoveries: %w", err)
+		}
+		rep.Notified += recovered
+
 		days, err := e.rollupAvailability(ctx, tx)
 		if err != nil {
 			return err
@@ -719,34 +727,6 @@ func (e *Evaluator) escalate(ctx context.Context, tx pgx.Tx) (int, error) {
 		   AND (
 		     (now() - opened_at > interval '15 minutes' AND escalation_level < 1) OR
 		     (now() - opened_at > interval '1 hour'     AND escalation_level < 2))`)
-	if err != nil {
-		return 0, err
-	}
-	return int(tag.RowsAffected()), nil
-}
-
-// queueNotifications writes delivery intents for alerts that have none.
-//
-// Delivery itself is not implemented: no channel is configured yet, and sending
-// is a separate concern from deciding. Writing the ledger row now means "was
-// anyone actually told" stays answerable, and makes the gap visible rather than
-// letting the product imply notifications are happening.
-func (e *Evaluator) queueNotifications(ctx context.Context, tx pgx.Tx) (int, error) {
-	tag, err := tx.Exec(ctx,
-		`INSERT INTO alert_notifications (tenant_id, alert_id, channel_id, level, state, last_error)
-		 SELECT current_tenant_id(), a.id, NULL, a.escalation_level, 'skipped',
-		        'no notification channel configured'
-		 FROM alerts a
-		 JOIN resources r ON r.id = a.resource_id
-		 LEFT JOIN notification_profiles np
-		        ON np.id = coalesce(r.notification_profile_id,
-		                            (SELECT id FROM notification_profiles WHERE is_default LIMIT 1))
-		 WHERE a.state = 'open'
-		   AND NOT EXISTS (
-		     SELECT 1 FROM alert_notifications n
-		     WHERE n.alert_id = a.id AND n.level = a.escalation_level)
-		   -- Honour the profile's confirmation delay before telling anyone.
-		   AND a.poll_count >= coalesce(np.notification_delay, 1)`)
 	if err != nil {
 		return 0, err
 	}

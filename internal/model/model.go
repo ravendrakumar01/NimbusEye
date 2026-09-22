@@ -141,6 +141,29 @@ type Alarm struct {
 	AckedBy        string     `json:"acknowledged_by,omitempty"`
 	ResolvedAt     *time.Time `json:"resolved_at,omitempty"`
 	EscalationLvl  int        `json:"escalation_level"`
+
+	// MutedUntil is set while delivery is deliberately suppressed. The alarm stays
+	// open and visible: muting is about the noise, not about the problem.
+	MutedUntil *time.Time `json:"muted_until,omitempty"`
+	MuteReason string     `json:"mute_reason,omitempty"`
+	// SuppressedBy names the maintenance window silencing this alarm, if any.
+	// Distinct from a mute: maintenance is planned, scoped and excluded from
+	// availability.
+	SuppressedBy string `json:"suppressed_by_maintenance,omitempty"`
+	// RCA holds the notes people have added. Its worth is entirely in the second
+	// occurrence of the same alarm.
+	RCA []RCANote `json:"rca,omitempty"`
+	// Notified summarises delivery so the list can show whether anyone was told
+	// without a request per row.
+	Notified       int        `json:"notified"`
+	LastNotifiedAt *time.Time `json:"last_notified_at,omitempty"`
+}
+
+// RCANote is one entry in an alarm's root-cause record.
+type RCANote struct {
+	Note   string    `json:"note"`
+	Author string    `json:"author"`
+	At     time.Time `json:"at"`
 }
 
 // DurationSec is how long the alarm has been open, in seconds.

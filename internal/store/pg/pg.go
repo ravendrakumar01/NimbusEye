@@ -632,7 +632,14 @@ func (s *Store) Alarms(f store.AlarmFilter) model.Page[model.Alarm] {
 			        coalesce(a.metric_key,''), a.observed_value, a.threshold_value,
 			        a.message, a.poll_count, a.opened_at, a.acknowledged_at,
 			        a.resolved_at, a.escalation_level,
-			        (SELECT u.display_name FROM users u WHERE u.id = a.acknowledged_by)
+			        (SELECT u.display_name FROM users u WHERE u.id = a.acknowledged_by),
+			        -- Mute, maintenance suppression, notes and delivery count come
+			        -- back with the list so a row can show whether anyone was told
+			        -- without a request per alarm.
+			        a.muted_until, a.suppressed_by_maintenance::text, a.rca,
+			        a.last_notified_at,
+			        (SELECT count(*) FROM alert_notifications n
+			          WHERE n.alert_id = a.id AND n.state = 'sent')::int
 			 FROM alerts a JOIN resources r ON r.id = a.resource_id
 			 WHERE `+where+`
 			 ORDER BY CASE a.severity WHEN 'down' THEN 0 WHEN 'critical' THEN 1
@@ -645,16 +652,22 @@ func (s *Store) Alarms(f store.AlarmFilter) model.Page[model.Alarm] {
 		defer rows.Close()
 		for rows.Next() {
 			var a model.Alarm
-			var ackBy *string
+			var ackBy, mw *string
+			var rcaRaw []byte
 			if err := rows.Scan(&a.ID, &a.ResourceID, &a.ResourceName, &a.ResourceType,
 				&a.Region, &a.DedupKey, &a.Severity, &a.State, &a.MetricKey,
 				&a.ObservedValue, &a.ThresholdValue, &a.Message, &a.PollCount,
-				&a.OpenedAt, &a.AckedAt, &a.ResolvedAt, &a.EscalationLvl, &ackBy); err != nil {
+				&a.OpenedAt, &a.AckedAt, &a.ResolvedAt, &a.EscalationLvl, &ackBy,
+				&a.MutedUntil, &mw, &rcaRaw, &a.LastNotifiedAt, &a.Notified); err != nil {
 				return err
 			}
 			if ackBy != nil {
 				a.AckedBy = *ackBy
 			}
+			if mw != nil {
+				a.SuppressedBy = *mw
+			}
+			a.RCA, a.MuteReason = parseRCA(rcaRaw)
 			if t, ok := catalog.Get(a.ResourceType); ok {
 				a.Provider = t.Provider
 				if m, found := t.Metric(a.MetricKey); found {
@@ -722,7 +735,14 @@ func (s *Store) Acknowledge(id, user string) (model.Alarm, bool) {
 			        coalesce(a.metric_key,''), a.observed_value, a.threshold_value,
 			        a.message, a.poll_count, a.opened_at, a.acknowledged_at,
 			        a.resolved_at, a.escalation_level,
-			        (SELECT u.display_name FROM users u WHERE u.id = a.acknowledged_by)
+			        (SELECT u.display_name FROM users u WHERE u.id = a.acknowledged_by),
+			        -- Mute, maintenance suppression, notes and delivery count come
+			        -- back with the list so a row can show whether anyone was told
+			        -- without a request per alarm.
+			        a.muted_until, a.suppressed_by_maintenance::text, a.rca,
+			        a.last_notified_at,
+			        (SELECT count(*) FROM alert_notifications n
+			          WHERE n.alert_id = a.id AND n.state = 'sent')::int
 			 FROM alerts a JOIN resources r ON r.id = a.resource_id WHERE a.id = $1::uuid`, id)
 		if err != nil {
 			return err
