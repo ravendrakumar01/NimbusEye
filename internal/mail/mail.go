@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/mail"
 	"net/smtp"
@@ -187,6 +188,30 @@ func (s *Sender) password() (string, error) {
 }
 
 // build assembles the RFC 5322 message.
+// quotedPrintable encodes a body for transport.
+//
+// Necessary rather than decorative. Without a Content-Transfer-Encoding the message
+// declares itself 7-bit, and any byte above 127 then depends on the relay guessing
+// right — which is how an em dash arrives as three mojibake characters. Resource
+// names come from the customer's cloud and can contain anything, so this cannot be
+// avoided by being careful with our own wording.
+//
+// Also enforces the 998-octet line limit that SMTP requires and that long HTML
+// attributes break without warning.
+func quotedPrintable(s string) string {
+	var b strings.Builder
+	w := quotedprintable.NewWriter(&b)
+	if _, err := w.Write([]byte(s)); err != nil {
+		// Writing to a strings.Builder cannot fail; fall back to the raw body
+		// rather than sending nothing.
+		return s
+	}
+	if err := w.Close(); err != nil {
+		return s
+	}
+	return b.String()
+}
+
 func (s *Sender) build(m Message) []byte {
 	from := s.cfg.From
 	if s.cfg.FromName != "" {
@@ -206,19 +231,22 @@ func (s *Sender) build(m Message) []byte {
 	b.WriteString("X-Auto-Response-Suppress: All\r\n")
 
 	if m.HTML == "" {
-		b.WriteString("Content-Type: text/plain; charset=utf-8\r\n\r\n")
-		b.WriteString(normaliseNewlines(m.Text))
+		b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+		b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+		b.WriteString(quotedPrintable(normaliseNewlines(m.Text)))
 		return []byte(b.String())
 	}
 
 	boundary := "nimbuseye-" + fmt.Sprint(time.Now().UnixNano())
 	b.WriteString("Content-Type: multipart/alternative; boundary=\"" + boundary + "\"\r\n\r\n")
 	b.WriteString("--" + boundary + "\r\n")
-	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n\r\n")
-	b.WriteString(normaliseNewlines(m.Text) + "\r\n")
+	b.WriteString("Content-Type: text/plain; charset=utf-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+	b.WriteString(quotedPrintable(normaliseNewlines(m.Text)) + "\r\n")
 	b.WriteString("--" + boundary + "\r\n")
-	b.WriteString("Content-Type: text/html; charset=utf-8\r\n\r\n")
-	b.WriteString(normaliseNewlines(m.HTML) + "\r\n")
+	b.WriteString("Content-Type: text/html; charset=utf-8\r\n")
+	b.WriteString("Content-Transfer-Encoding: quoted-printable\r\n\r\n")
+	b.WriteString(quotedPrintable(normaliseNewlines(m.HTML)) + "\r\n")
 	b.WriteString("--" + boundary + "--\r\n")
 	return []byte(b.String())
 }

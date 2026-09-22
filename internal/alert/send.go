@@ -276,7 +276,7 @@ func headline(p pending) string {
 	}
 	switch {
 	case p.observed != nil && p.threshold != nil:
-		return fmt.Sprintf("%s is %s — threshold %s",
+		return fmt.Sprintf("%s is %s (threshold %s)",
 			label, unitSuffix(*p.observed, p.unit), unitSuffix(*p.threshold, p.unit))
 	case p.observed != nil:
 		return fmt.Sprintf("%s is %s", label, unitSuffix(*p.observed, p.unit))
@@ -352,7 +352,7 @@ func severityColour(sev string) string {
 
 func orDash(s string) string {
 	if s == "" {
-		return "\u2014"
+		return "not set"
 	}
 	return s
 }
@@ -386,7 +386,7 @@ func alertEmail(p pending, baseURL string) mail.Message {
 
   %s
 
-— NimbusEye
+-- NimbusEye
 `, p.displayName, p.displayName, p.typeName, severityWord(p.severity), headline(p),
 			dur, p.openedAt.UTC().Format("2 Jan 2006, 15:04 UTC"), link)
 		return mail.Message{
@@ -398,7 +398,7 @@ func alertEmail(p pending, baseURL string) mail.Message {
 	}
 
 	head := headline(p)
-	subject := fmt.Sprintf("%s  %s \u2014 %s",
+	subject := fmt.Sprintf("%s  %s - %s",
 		severityWord(p.severity), p.displayName, shortHeadline(p))
 	if p.level > 0 {
 		// "still open" rather than "escalation 2": the reader needs to know this is
@@ -408,7 +408,7 @@ func alertEmail(p pending, baseURL string) mail.Message {
 
 	esc := "first notification"
 	if p.level > 0 {
-		esc = fmt.Sprintf("escalation %d \u2014 this has been open without being acknowledged", p.level)
+		esc = fmt.Sprintf("escalation %d, open without being acknowledged", p.level)
 	}
 
 	text := fmt.Sprintf(`%s
@@ -424,7 +424,7 @@ func alertEmail(p pending, baseURL string) mail.Message {
 To stop these messages: acknowledge or mute the alarm on the Alarms page, or
 schedule maintenance if the work is planned.
 
-— NimbusEye
+-- NimbusEye
 `, head, p.displayName, p.typeName, severityWord(p.severity),
 		humanDuration(time.Since(p.openedAt)),
 		p.openedAt.UTC().Format("2 Jan 2006, 15:04 UTC"),
