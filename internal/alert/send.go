@@ -311,6 +311,53 @@ func shortHeadline(p pending) string {
 	return p.message
 }
 
+// subjectName is the monitor as it should appear in a subject line.
+//
+// Cloud resources are not always named by people. This tenancy has load balancers
+// called a087361c-fc7d-11e9-ace0-0a580aed6749, which ate the whole subject and left
+// no room for the measurement — the one thing the subject exists to carry. A bare
+// identifier is shortened and prefixed with its type, so "Load Balancer a087361c"
+// says more in a quarter of the space than the full UUID said.
+func subjectName(p pending) string {
+	name := p.displayName
+	if looksLikeID(name) {
+		short := name
+		if i := strings.IndexByte(short, '-'); i > 0 {
+			short = short[:i]
+		}
+		if p.typeName != "" {
+			return p.typeName + " " + short
+		}
+		return short
+	}
+	// Anything very long still gets clipped, because a subject truncated by the
+	// client cuts from the end, which is where the measurement is.
+	const maxName = 38
+	if len(name) > maxName {
+		return name[:maxName-3] + "..."
+	}
+	return name
+}
+
+// looksLikeID reports whether a name is an identifier rather than something a
+// person chose: hex and dashes only, and long enough that nobody typed it.
+func looksLikeID(s string) bool {
+	if len(s) < 20 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9',
+			r >= 'a' && r <= 'f',
+			r >= 'A' && r <= 'F',
+			r == '-':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // bigValue is the figure shown large in the HTML, or empty when there is no single
 // number to show — a down check has no measurement, only an absence.
 func bigValue(p pending) string {
@@ -391,7 +438,7 @@ func alertEmail(p pending, baseURL string) mail.Message {
 			dur, p.openedAt.UTC().Format("2 Jan 2006, 15:04 UTC"), link)
 		return mail.Message{
 			To:      []string{p.recipient},
-			Subject: fmt.Sprintf("RECOVERED  %s", p.displayName),
+			Subject: fmt.Sprintf("RECOVERED  %s", subjectName(p)),
 			Text:    text,
 			HTML:    emailHTML(p, headline(p), "", dur, link, true),
 		}
@@ -399,7 +446,7 @@ func alertEmail(p pending, baseURL string) mail.Message {
 
 	head := headline(p)
 	subject := fmt.Sprintf("%s  %s - %s",
-		severityWord(p.severity), p.displayName, shortHeadline(p))
+		severityWord(p.severity), subjectName(p), shortHeadline(p))
 	if p.level > 0 {
 		// "still open" rather than "escalation 2": the reader needs to know this is
 		// a repeat, and the precise stage is in the body where there is room.
@@ -436,8 +483,22 @@ schedule maintenance if the work is planned.
 	}
 }
 
-// emailHTML renders both the alert and the recovery layouts, which differ only in
-// wording and colour. One function because two near-identical templates drift.
+// emailHTML renders both the alert and the recovery layouts.
+//
+// Written as nested tables with fixed widths, which looks like 1999 and is what
+// actually works. Outlook renders HTML through Word's engine: it ignores max-width
+// and margin:auto on a div, so the first version of this spread edge to edge in the
+// reading pane with its rounded card gone and the button flattened into green text.
+// Screenshots from the recipient's Outlook are the only reason we know — it looked
+// correct in every browser.
+//
+// The rules being followed, none of them optional for Outlook:
+//
+//	Layout in tables with explicit width attributes, not CSS on divs.
+//	Centring via align="center" on the outer cell, not margin:auto.
+//	The button is a table cell with a background colour, not a padded anchor.
+//	Inline styles only; Outlook drops most of a <style> block.
+//	No border-radius, no flexbox, no shorthand background.
 func emailHTML(p pending, head, stage, dur, link string, recovered bool) string {
 	colour := severityColour(p.severity)
 	band := severityWord(p.severity)
@@ -446,66 +507,125 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
 	}
 
 	// With a value block the headline would repeat it in words, so the sentence is
-	// dropped and the number carries it. Without one — a down check has nothing to
-	// measure — the sentence is all there is.
+	// dropped and the number carries it. Without one - a down check has nothing to
+	// measure - the sentence is all there is.
 	big := bigValue(p)
 	subhead := ""
 	if big == "" || recovered {
 		subhead = fmt.Sprintf(
-			`<div style="font-size:14px;color:#475569;margin-top:5px">%s</div>`, head)
+			`<tr><td style="padding:2px 24px 0;font-family:Arial,Helvetica,sans-serif;`+
+				`font-size:14px;color:#475569">%s</td></tr>`, head)
 	}
+
 	valueBlock := ""
 	if big != "" && !recovered {
-		thr := ""
-		if p.threshold != nil {
-			thr = fmt.Sprintf(
-				`<div style="font-size:12px;color:#94a3b8;margin-top:2px">threshold %s</div>`,
-				unitSuffix(*p.threshold, p.unit))
-		}
 		label := p.metricLabel
 		if label == "" {
 			label = strings.ReplaceAll(p.metricKey, "_", " ")
 		}
+		thr := ""
+		if p.threshold != nil {
+			thr = fmt.Sprintf(
+				`<tr><td style="padding:2px 0 0;font-family:Arial,Helvetica,sans-serif;`+
+					`font-size:12px;color:#94a3b8">threshold %s</td></tr>`,
+				unitSuffix(*p.threshold, p.unit))
+		}
 		valueBlock = fmt.Sprintf(`
-      <div style="margin:18px 0 0;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px">
-        <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em">%s</div>
-        <div style="font-size:30px;line-height:1.1;font-weight:700;color:%s;margin-top:4px">%s</div>
-        %s
-      </div>`, label, colour, big, thr)
+          <tr><td style="padding:16px 24px 0">
+            <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color:#f8fafc;border:1px solid #e2e8f0">
+              <tr><td style="padding:14px 16px">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                                 color:#64748b;letter-spacing:.06em">%s</td></tr>
+                  <tr><td style="padding:3px 0 0;font-family:Arial,Helvetica,sans-serif;
+                                 font-size:28px;font-weight:bold;color:%s">%s</td></tr>
+                  %s
+                </table>
+              </td></tr>
+            </table>
+          </td></tr>`, strings.ToUpper(label), colour, big, thr)
 	}
 
-	rows := fmt.Sprintf(`
-        <tr><td style="padding:3px 16px 3px 0;color:#94a3b8">Monitor</td><td style="padding:3px 0"><strong>%s</strong></td></tr>
-        <tr><td style="padding:3px 16px 3px 0;color:#94a3b8">Type</td><td style="padding:3px 0">%s</td></tr>
-        <tr><td style="padding:3px 16px 3px 0;color:#94a3b8">Region</td><td style="padding:3px 0">%s</td></tr>
-        <tr><td style="padding:3px 16px 3px 0;color:#94a3b8">%s</td><td style="padding:3px 0">%s</td></tr>`,
-		p.displayName, p.typeName, orDash(p.region),
-		map[bool]string{true: "Lasted", false: "Ongoing"}[recovered], dur)
-	if stage != "" {
-		rows += fmt.Sprintf(
-			`<tr><td style="padding:3px 16px 3px 0;color:#94a3b8">Stage</td><td style="padding:3px 0">%s</td></tr>`,
-			stage)
+	// Facts. A two-column table rather than a definition list, because Outlook adds
+	// its own spacing to anything it does not recognise.
+	factRow := func(k, v string) string {
+		return fmt.Sprintf(
+			`<tr>`+
+				`<td width="86" valign="top" style="padding:4px 10px 4px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#94a3b8">%s</td>`+
+				`<td valign="top" style="padding:4px 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#1e293b">%s</td>`+
+				`</tr>`, k, v)
 	}
-
-	footer := `To stop these messages, acknowledge or mute the alarm, or schedule
-        maintenance if the work is planned.`
+	facts := factRow("Monitor", "<strong>"+p.displayName+"</strong>")
+	facts += factRow("Type", p.typeName)
+	facts += factRow("Region", orDash(p.region))
 	if recovered {
-		footer = `No action needed. This is the closing message for that alarm.`
+		facts += factRow("Lasted", dur)
+	} else {
+		facts += factRow("Ongoing", dur)
+	}
+	if stage != "" {
+		facts += factRow("Stage", stage)
+	}
+
+	footer := "To stop these messages, acknowledge or mute the alarm, or schedule " +
+		"maintenance if the work is planned."
+	if recovered {
+		footer = "No action needed. This is the closing message for that alarm."
 	}
 
 	return fmt.Sprintf(`<!doctype html>
-<html><body style="margin:0;padding:24px 16px;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#1e293b">
-  <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">
-    <div style="background:%s;padding:11px 20px;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:.08em">%s</div>
-    <div style="padding:20px">
-      <div style="font-size:19px;font-weight:650;line-height:1.3">%s</div>
-      %s%s
-      <table style="margin:18px 0 0;font-size:13px;line-height:1.6;border-collapse:collapse">%s</table>
-      <div style="margin:22px 0 0">
-        <a href="%s" style="display:inline-block;background:#2e8b46;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-size:14px;font-weight:600">Open in NimbusEye</a>
-      </div>
-      <p style="font-size:11px;line-height:1.6;color:#94a3b8;margin:20px 0 0;padding-top:14px;border-top:1px solid #f1f5f9">%s</p>
-    </div>
-  </div>
-</body></html>`, colour, band, p.displayName, subhead, valueBlock, rows, link, footer)
+<html xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
+<!--[if mso]><xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch>
+</o:OfficeDocumentSettings></xml><![endif]-->
+<title>%s</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9">
+<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0"
+       style="background-color:#f1f5f9">
+  <tr><td align="center" style="padding:20px 10px">
+
+    <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0"
+           style="width:560px;max-width:560px;background-color:#ffffff;border:1px solid #e2e8f0">
+
+      <tr><td style="background-color:%s;padding:10px 24px;font-family:Arial,Helvetica,sans-serif;
+                     font-size:12px;font-weight:bold;color:#ffffff;letter-spacing:.1em">%s</td></tr>
+
+      <tr><td style="padding:18px 24px 0;font-family:Arial,Helvetica,sans-serif;
+                     font-size:18px;font-weight:bold;color:#1e293b;word-break:break-all">%s</td></tr>
+      %s
+      %s
+
+      <tr><td style="padding:16px 24px 0">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">%s</table>
+      </td></tr>
+
+      <tr><td style="padding:20px 24px 0">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+          <tr><td align="center" bgcolor="#2e8b46" style="background-color:#2e8b46">
+            <a href="%s" style="display:block;padding:11px 20px;font-family:Arial,Helvetica,sans-serif;
+                                font-size:14px;font-weight:bold;color:#ffffff;text-decoration:none">
+              Open in NimbusEye</a>
+          </td></tr>
+        </table>
+      </td></tr>
+
+      <tr><td style="padding:18px 24px 20px">
+        <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0">
+          <tr><td style="border-top:1px solid #f1f5f9;padding:12px 0 0;
+                         font-family:Arial,Helvetica,sans-serif;font-size:11px;
+                         line-height:16px;color:#94a3b8">%s</td></tr>
+        </table>
+      </td></tr>
+
+    </table>
+
+  </td></tr>
+</table>
+</body></html>`, band+" "+p.displayName, colour, band, p.displayName,
+		subhead, valueBlock, facts, link, footer)
 }
