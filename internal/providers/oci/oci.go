@@ -30,6 +30,7 @@ import (
 
 	"github.com/oracle/oci-go-sdk/v65/common"
 	"github.com/oracle/oci-go-sdk/v65/identity"
+	"github.com/oracle/oci-go-sdk/v65/loadbalancer"
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
 	"github.com/oracle/oci-go-sdk/v65/resourcesearch"
 )
@@ -60,6 +61,9 @@ type Client struct {
 	search   resourcesearch.ResourceSearchClient
 	monitor  monitoring.MonitoringClient
 	identity identity.IdentityClient
+	// lb answers the questions Monitoring cannot: which address this load balancer
+	// serves, and which backend is actually down.
+	lb *loadbalancer.LoadBalancerClient
 
 	// gate paces metric reads. OCI rate-limits SummarizeMetricsData per tenancy,
 	// and exceeding it returns 429 per request rather than slowing us down.
@@ -198,6 +202,11 @@ func New(cfg Config) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("oci: monitoring client: %w", err)
 	}
+	lbc, err := loadbalancer.NewLoadBalancerClientWithConfigurationProvider(provider)
+	if err != nil {
+		return nil, fmt.Errorf("oci: load balancer client: %w", err)
+	}
+
 	idn, err := identity.NewIdentityClientWithConfigurationProvider(provider)
 	if err != nil {
 		return nil, fmt.Errorf("oci: identity client: %w", err)
@@ -208,6 +217,7 @@ func New(cfg Config) (*Client, error) {
 		search:   search,
 		monitor:  mon,
 		identity: idn,
+		lb:       &lbc,
 		gate:     newLimiter(cfg.MetricsPerSecond),
 	}, nil
 }

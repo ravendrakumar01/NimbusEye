@@ -78,6 +78,17 @@ type pending struct {
 	// "Storage Utilisation is 97%" rather than "storage_utilization is 97".
 	metricLabel string
 	unit        string
+
+	// Context pulled from the resource's attributes. These are what turn "a number
+	// is past a line" into something somebody can act on without opening a console.
+	compartment string
+	// addresses identifies a resource whose display name is a UUID, which is most
+	// load balancers in most tenancies.
+	addresses []string
+	// unhealthyBackends names the specific backends that are failing. The metric
+	// says how many; only this says which.
+	unhealthyBackends []string
+	listeners         []string
 }
 
 // recovery reports whether this is a "it came back" message.
@@ -167,6 +178,21 @@ func (e *Evaluator) Deliver(ctx context.Context, s *Sender) (sent, failed int, e
 				}
 				return err
 			}
+			// Enrichment the collector stored against the resource. Read here rather
+			// than joined in the query above because it is a JSON document, and
+			// pulling fields out in SQL would put the shape in two places.
+			var attrs map[string]any
+			if err := tx.QueryRow(ctx,
+				`SELECT attributes FROM resources WHERE id = $1::uuid`, p.resourceID).
+				Scan(&attrs); err == nil {
+				if v, ok := attrs["compartment_name"].(string); ok {
+					p.compartment = v
+				}
+				p.addresses = stringsFrom(attrs["addresses"])
+				p.unhealthyBackends = stringsFrom(attrs["unhealthy_backends"])
+				p.listeners = stringsFrom(attrs["listeners"])
+			}
+
 			// The catalog is the authority on how a type and a metric are named, so
 			// the email spells them the same way every screen does.
 			p.typeName = typeCode
@@ -222,6 +248,30 @@ func (s *Sender) send(p pending) error {
 		// implemented is a configuration mistake, and the log should say which.
 		return fmt.Errorf("%s delivery is not implemented; only email is", p.channelType)
 	}
+}
+
+// stringsFrom pulls a string list out of a JSON attribute, tolerating both a real
+// array and a single value, because provider payloads are not consistent about it.
+func stringsFrom(v any) []string {
+	switch t := v.(type) {
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, x := range t {
+			if s, ok := x.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		if len(out) == 0 {
+			return nil
+		}
+		return out
+	case string:
+		if t == "" {
+			return nil
+		}
+		return []string{t}
+	}
+	return nil
 }
 
 // severityWord is the human phrasing, since "down" alone reads oddly in a subject.
@@ -458,24 +508,60 @@ func alertEmail(p pending, baseURL string) mail.Message {
 		esc = fmt.Sprintf("escalation %d, open without being acknowledged", p.level)
 	}
 
+	// Facts as aligned label/value pairs, built rather than templated so an optional
+	// row does not leave a gap and the labels stay in one column.
+	var facts strings.Builder
+	fact := func(k, v string) {
+		if v != "" {
+			fmt.Fprintf(&facts, "  %-12s %s\n", k, v)
+		}
+	}
+	fact("Monitor", fmt.Sprintf("%s (%s)", p.displayName, p.typeName))
+	fact("Severity", severityWord(p.severity))
+	if len(p.addresses) > 0 {
+		fact("Address", strings.Join(p.addresses, ", "))
+	}
+	fact("Compartment", p.compartment)
+	fact("Region", orDash(p.region))
+	if len(p.listeners) > 0 {
+		fact("Listeners", strings.Join(p.listeners, ", "))
+	}
+	fact("Ongoing", fmt.Sprintf("%s (since %s)",
+		humanDuration(time.Since(p.openedAt)),
+		p.openedAt.UTC().Format("2 Jan 2006, 15:04 UTC")))
+	fact("Stage", esc)
+
+	// The specific backends, after the facts rather than inside them: it is a list,
+	// and threading a list through a label column reads badly.
+	backends := ""
+	if len(p.unhealthyBackends) > 0 {
+		var b strings.Builder
+		b.WriteString("\nFailing backends:\n")
+		for _, x := range p.unhealthyBackends {
+			fmt.Fprintf(&b, "  %s\n", x)
+		}
+		backends = b.String()
+	}
+
+	guidance := hintFor(p.metricKey)
+	if guidance == "" && p.severity == "down" {
+		guidance = downHint
+	}
+	checkBlock := ""
+	if guidance != "" {
+		checkBlock = "\nWhat to check:\n  " + wrapText(guidance, 74, "  ") + "\n"
+	}
+
 	text := fmt.Sprintf(`%s
 
-  Monitor    %s (%s)
-  Severity   %s
-  Ongoing    %s (since %s)
-  Region     %s
-  Stage      %s
-
+%s%s%s
   %s
 
 To stop these messages: acknowledge or mute the alarm on the Alarms page, or
 schedule maintenance if the work is planned.
 
 -- NimbusEye
-`, head, p.displayName, p.typeName, severityWord(p.severity),
-		humanDuration(time.Since(p.openedAt)),
-		p.openedAt.UTC().Format("2 Jan 2006, 15:04 UTC"),
-		orDash(p.region), esc, link)
+`, head, facts.String(), backends, checkBlock, link)
 
 	return mail.Message{
 		To: []string{p.recipient}, Subject: subject, Text: text,
@@ -558,7 +644,18 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
 	}
 	facts := factRow("Monitor", "<strong>"+p.displayName+"</strong>")
 	facts += factRow("Type", p.typeName)
+	if len(p.addresses) > 0 {
+		// The address goes high up, because for a resource named by a UUID it is the
+		// only line that says which one this is.
+		facts += factRow("Address", strings.Join(p.addresses, ", "))
+	}
+	if p.compartment != "" {
+		facts += factRow("Compartment", p.compartment)
+	}
 	facts += factRow("Region", orDash(p.region))
+	if len(p.listeners) > 0 {
+		facts += factRow("Listeners", strings.Join(p.listeners, ", "))
+	}
 	if recovered {
 		facts += factRow("Lasted", dur)
 	} else {
@@ -566,6 +663,55 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
 	}
 	if stage != "" {
 		facts += factRow("Stage", stage)
+	}
+
+	// The specific backends that are failing, which is the whole difference between
+	// "three are unhealthy" and something somebody can act on.
+	backendBlock := ""
+	if len(p.unhealthyBackends) > 0 && !recovered {
+		items := ""
+		for _, b := range p.unhealthyBackends {
+			items += fmt.Sprintf(
+				`<tr><td style="padding:2px 0;font-family:Arial,Helvetica,sans-serif;`+
+					`font-size:13px;color:#b3261e">%s</td></tr>`, b)
+		}
+		backendBlock = fmt.Sprintf(`
+          <tr><td style="padding:16px 24px 0">
+            <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color:#fef2f2;border:1px solid #fecaca">
+              <tr><td style="padding:12px 16px">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr><td style="padding:0 0 4px;font-family:Arial,Helvetica,sans-serif;
+                                 font-size:11px;color:#b3261e;letter-spacing:.06em">FAILING BACKENDS</td></tr>
+                  %s
+                </table>
+              </td></tr>
+            </table>
+          </td></tr>`, items)
+	}
+
+	// What to look at first. Says where to look, not what the answer is: a hint that
+	// guessed at the cause would be wrong often enough to be worse than silence.
+	guidance := hintFor(p.metricKey)
+	if guidance == "" && p.severity == "down" {
+		guidance = downHint
+	}
+	checkBlock := ""
+	if guidance != "" && !recovered {
+		checkBlock = fmt.Sprintf(`
+          <tr><td style="padding:16px 24px 0">
+            <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0"
+                   style="background-color:#f8fafc;border-left:3px solid #2e8b46">
+              <tr><td style="padding:12px 14px">
+                <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+                  <tr><td style="padding:0 0 4px;font-family:Arial,Helvetica,sans-serif;
+                                 font-size:11px;color:#64748b;letter-spacing:.06em">WHAT TO CHECK</td></tr>
+                  <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;
+                                 line-height:19px;color:#334155">%s</td></tr>
+                </table>
+              </td></tr>
+            </table>
+          </td></tr>`, guidance)
 	}
 
 	footer := "To stop these messages, acknowledge or mute the alarm, or schedule " +
@@ -603,6 +749,8 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
       <tr><td style="padding:16px 24px 0">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">%s</table>
       </td></tr>
+      %s
+      %s
 
       <tr><td style="padding:20px 24px 0">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">
@@ -627,5 +775,31 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
   </td></tr>
 </table>
 </body></html>`, band+" "+p.displayName, colour, band, p.displayName,
-		subhead, valueBlock, facts, link, footer)
+		subhead, valueBlock, facts, backendBlock, checkBlock, link, footer)
+}
+
+// wrapText breaks a paragraph at a column, for the plain-text alternative.
+//
+// Needed because the guidance lines are sentences, and an unwrapped 300-character
+// line is unreadable in a terminal mail client and gets hard-wrapped at an
+// arbitrary point by everything else.
+func wrapText(s string, width int, indent string) string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	col := 0
+	for i, w := range words {
+		if col > 0 && col+1+len(w) > width {
+			b.WriteString("\n" + indent)
+			col = 0
+		} else if i > 0 {
+			b.WriteString(" ")
+			col++
+		}
+		b.WriteString(w)
+		col += len(w)
+	}
+	return b.String()
 }

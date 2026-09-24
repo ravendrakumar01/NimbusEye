@@ -179,6 +179,66 @@ func RunOCI(ctx context.Context, acct OCIAccount, sink Sink, log *slog.Logger, w
 		report.RegionsOK = append(report.RegionsOK, region)
 		log.Info("region discovered", "region", region, "resources", len(found))
 
+		// An OCID identifies a compartment to the API and to nobody else. "Which
+		// compartment is this in" is the first question after "what is broken", and
+		// answering it should not need a console tab.
+		if names, err := client.CompartmentNames(ctx); err == nil {
+			named := 0
+			for i := range all {
+				if all[i].Attributes == nil {
+					continue
+				}
+				id, _ := all[i].Attributes["compartment_id"].(string)
+				if n, ok := names[id]; ok && n != "" {
+					all[i].Attributes["compartment_name"] = n
+					named++
+				}
+			}
+			log.Debug("compartment names resolved", "compartments", len(names), "resources", named)
+		} else {
+			log.Warn("could not list compartments; alerts will show OCIDs", "err", err)
+		}
+
+		// Load balancers get their address and backend health. A metric can say
+		// "three backends are unhealthy"; only the service can say which three, and
+		// the number alone is not something anybody can act on.
+		enriched, failed := 0, 0
+		for i := range all {
+			if all[i].ResourceType != "OCI_LOAD_BALANCER" || all[i].Region != region {
+				continue
+			}
+			d, err := client.LoadBalancerDetails(ctx, all[i].NativeID)
+			if err != nil {
+				failed++
+				continue
+			}
+			if all[i].Attributes == nil {
+				all[i].Attributes = map[string]any{}
+			}
+			if len(d.Addresses) > 0 {
+				all[i].Attributes["addresses"] = d.Addresses
+			}
+			if d.Shape != "" {
+				all[i].Attributes["shape"] = d.Shape
+			}
+			if len(d.Listeners) > 0 {
+				all[i].Attributes["listeners"] = d.Listeners
+			}
+			if d.OverallHealth != "" {
+				all[i].Attributes["health"] = d.OverallHealth
+			}
+			if bs := d.BackendSets; len(bs) > 0 {
+				all[i].Attributes["backend_sets"] = bs
+			}
+			if ub := d.UnhealthyBackends(); len(ub) > 0 {
+				all[i].Attributes["unhealthy_backends"] = ub
+			}
+			enriched++
+		}
+		if enriched > 0 || failed > 0 {
+			log.Debug("load balancer detail", "enriched", enriched, "failed", failed)
+		}
+
 		if withMetrics {
 			n, reporting, err := collectOCIMetrics(ctx, client, all, compartmentOf, nameOf, acct.TenancyOCID, acct.MetricWindow, sink, log)
 			if err != nil {
