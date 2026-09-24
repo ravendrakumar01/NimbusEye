@@ -89,6 +89,15 @@ type pending struct {
 	// says how many; only this says which.
 	unhealthyBackends []string
 	listeners         []string
+
+	// The rule that fired, so the alert can explain its own verdict. Without these
+	// the reader sees a number and a word and has to go and look up why one produced
+	// the other.
+	troubleAt   *float64
+	criticalAt  *float64
+	pollsNeeded int
+	pollsSeen   int
+	higherWorse bool
 }
 
 // recovery reports whether this is a "it came back" message.
@@ -167,11 +176,12 @@ func (e *Evaluator) Deliver(ctx context.Context, s *Sender) (sent, failed int, e
 			if err := tx.QueryRow(ctx, `
 				SELECT a.severity, coalesce(a.metric_key,''), a.observed_value,
 				       a.threshold_value, coalesce(a.message,''), a.opened_at, a.resolved_at,
+				       a.poll_count,
 				       r.id::text, r.display_name, r.resource_type, coalesce(r.region,'')
 				FROM alerts a JOIN resources r ON r.id = a.resource_id
 				WHERE a.id = $1::uuid`, c.alertID).
 				Scan(&p.severity, &p.metricKey, &p.observed, &p.threshold, &p.message,
-					&p.openedAt, &p.resolvedAt, &p.resourceID, &p.displayName,
+					&p.openedAt, &p.resolvedAt, &p.pollsSeen, &p.resourceID, &p.displayName,
 					&typeCode, &p.region); err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					continue
@@ -200,8 +210,19 @@ func (e *Evaluator) Deliver(ctx context.Context, s *Sender) (sent, failed int, e
 				p.typeName = t.DisplayName
 				if m, ok := t.Metric(p.metricKey); ok {
 					p.metricLabel, p.unit = m.Label, m.Unit
+					p.troubleAt, p.criticalAt = m.Trouble, m.Critical
+					p.higherWorse = m.HigherIsWorse
 				}
 			}
+			// How many consecutive readings the rule required. Read from the profile
+			// that actually governs this type, not assumed, because that number is
+			// editable and the email should state what was really applied.
+			_ = tx.QueryRow(ctx, `
+				SELECT coalesce((r->>'polls_check')::int, 0)
+				FROM threshold_profiles tp
+				CROSS JOIN LATERAL jsonb_array_elements(tp.rules) r
+				WHERE tp.resource_type = $1 AND r->>'metric' = $2
+				LIMIT 1`, typeCode, p.metricKey).Scan(&p.pollsNeeded)
 			batch = append(batch, p)
 		}
 		return nil
@@ -408,6 +429,51 @@ func looksLikeID(s string) bool {
 	return true
 }
 
+// whyFired explains the verdict in words.
+//
+// The reader was shown "6270.8 ms" next to "threshold 3000 ms" and asked, reasonably,
+// what made that critical rather than merely bad. The rule is knowable and was not
+// being stated: which level was crossed, where the other level sits, and how many
+// consecutive readings had to agree before anyone was told.
+func whyFired(p pending) string {
+	if p.observed == nil || p.threshold == nil {
+		if p.severity == "down" {
+			n := p.pollsNeeded
+			if n <= 1 {
+				return "The check failed and did not recover on the next attempt."
+			}
+			return fmt.Sprintf("The check failed %d times in a row before this was raised.", n)
+		}
+		return ""
+	}
+
+	dir := "at or above"
+	if !p.higherWorse {
+		dir = "at or below"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s is %s the %s threshold of %s",
+		unitSuffix(*p.observed, p.unit), dir, strings.ToLower(severityWord(p.severity)),
+		unitSuffix(*p.threshold, p.unit))
+
+	// Naming the other level gives the number a scale. "97% against a critical line
+	// of 90 and a trouble line of 80" says more than either figure alone.
+	other := p.troubleAt
+	otherName := "trouble"
+	if p.severity == "trouble" {
+		other, otherName = p.criticalAt, "critical"
+	}
+	if other != nil {
+		fmt.Fprintf(&b, ", with %s set at %s", otherName, unitSuffix(*other, p.unit))
+	}
+	if p.pollsNeeded > 1 {
+		fmt.Fprintf(&b, ". Confirmed over %d consecutive checks before alerting",
+			p.pollsNeeded)
+	}
+	b.WriteString(".")
+	return b.String()
+}
+
 // bigValue is the figure shown large in the HTML, or empty when there is no single
 // number to show — a down check has no measurement, only an absence.
 func bigValue(p pending) string {
@@ -552,16 +618,28 @@ func alertEmail(p pending, baseURL string) mail.Message {
 		checkBlock = "\nWhat to check:\n  " + wrapText(guidance, 74, "  ") + "\n"
 	}
 
+	// What was measured, then why that reading counts as this severity. Both were
+	// missing, and without them the reader has a number and a colour and no way to
+	// judge either.
+	context := ""
+	if mn := meaningFor(p.metricKey); mn != "" {
+		context += "\nWhat this measures:\n  " + wrapText(mn, 74, "  ") + "\n"
+	}
+	if why := whyFired(p); why != "" {
+		context += "\nWhy " + strings.ToLower(severityWord(p.severity)) + ":\n  " +
+			wrapText(why, 74, "  ") + "\n"
+	}
+
 	text := fmt.Sprintf(`%s
 
-%s%s%s
+%s%s%s%s
   %s
 
 To stop these messages: acknowledge or mute the alarm on the Alarms page, or
 schedule maintenance if the work is planned.
 
 -- NimbusEye
-`, head, facts.String(), backends, checkBlock, link)
+`, head, facts.String(), backends, context, checkBlock, link)
 
 	return mail.Message{
 		To: []string{p.recipient}, Subject: subject, Text: text,
@@ -690,6 +768,26 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
           </td></tr>`, items)
 	}
 
+	// Why this reading is this severity. Placed immediately after the number, because
+	// that is the point at which the reader asks.
+	whyBlock := ""
+	if why := whyFired(p); why != "" && !recovered {
+		whyBlock = fmt.Sprintf(`
+          <tr><td style="padding:12px 24px 0;font-family:Arial,Helvetica,sans-serif;
+                         font-size:13px;line-height:19px;color:#475569">
+            <strong style="color:#1e293b">Why %s:</strong> %s</td></tr>`,
+			strings.ToLower(severityWord(p.severity)), why)
+	}
+
+	// What the metric measures. An alert that assumes the reader already knows is one
+	// that gets forwarded to somebody else to interpret.
+	meaningBlock := ""
+	if mn := meaningFor(p.metricKey); mn != "" && !recovered {
+		meaningBlock = fmt.Sprintf(`
+          <tr><td style="padding:8px 24px 0;font-family:Arial,Helvetica,sans-serif;
+                         font-size:12px;line-height:18px;color:#94a3b8">%s</td></tr>`, mn)
+	}
+
 	// What to look at first. Says where to look, not what the answer is: a hint that
 	// guessed at the cause would be wrong often enough to be worse than silence.
 	guidance := hintFor(p.metricKey)
@@ -746,6 +844,8 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
       %s
       %s
 
+      %s
+      %s
       <tr><td style="padding:16px 24px 0">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0">%s</table>
       </td></tr>
@@ -775,7 +875,8 @@ func emailHTML(p pending, head, stage, dur, link string, recovered bool) string 
   </td></tr>
 </table>
 </body></html>`, band+" "+p.displayName, colour, band, p.displayName,
-		subhead, valueBlock, facts, backendBlock, checkBlock, link, footer)
+		subhead, valueBlock, meaningBlock, whyBlock, facts, backendBlock, checkBlock,
+		link, footer)
 }
 
 // wrapText breaks a paragraph at a column, for the plain-text alternative.
