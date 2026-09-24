@@ -898,6 +898,41 @@ export interface BulkActionResult {
   skipped?: Record<string, string>;
 }
 
+export interface InventoryType {
+  code: string;
+  display_name: string;
+  category: string;
+  count: number;
+  regions: string[];
+  up: number;
+  down: number;
+  trouble: number;
+  critical: number;
+  unknown: number;
+  suspended: number;
+}
+
+export interface InventoryRegion {
+  region: string;
+  count: number;
+  types: number;
+}
+
+export interface CloudInventory {
+  account_id: string;
+  account_name: string;
+  provider: string;
+  monitored: number;
+  /** What the last discovery saw, as against what is monitored. */
+  discovered: number;
+  ignored: number;
+  unmapped_total: number;
+  unmapped: UnmappedType[];
+  last_run_at: string | null;
+  types: InventoryType[];
+  regions: InventoryRegion[];
+}
+
 export const api = {
   /** Public: reports whether a session exists, without treating absence as an error. */
   session: () => get<SessionState>("/auth/session"),
@@ -1023,6 +1058,8 @@ export const api = {
     get<{ keys: TagKey[]; key_count: number; value_count: number }>("/admin/tags"),
 
   discovered: () => get<{ accounts: DiscoveryInventory[] }>("/discovered"),
+
+  cloudInventory: (id: string) => get<CloudInventory>(`/cloud-accounts/${id}/inventory`),
 
   healthTrend: (q: ReportQuery) => get<HealthTrend>("/reports/health-trend", q),
 

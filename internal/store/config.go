@@ -175,4 +175,54 @@ type ConfigStore interface {
 	HealthTrend(ctx context.Context, f ReportFilter) (HealthTrend, error)
 
 	BulkAction(ctx context.Context, in BulkActionInput) (BulkActionResult, error)
+
+	CloudInventory(ctx context.Context, accountID string) (CloudInventory, error)
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cloud inventory                                                             */
+/* -------------------------------------------------------------------------- */
+
+// InventoryType is one resource type's footprint in an account.
+type InventoryType struct {
+	Code        string   `json:"code"`
+	DisplayName string   `json:"display_name"`
+	Category    string   `json:"category"`
+	Count       int      `json:"count"`
+	Regions     []string `json:"regions"`
+	// Status counts, so the dashboard shows health alongside footprint. A type with
+	// forty resources and nine unknown is a different situation from forty healthy
+	// ones, and a count alone hides that.
+	Up        int `json:"up"`
+	Down      int `json:"down"`
+	Trouble   int `json:"trouble"`
+	Critical  int `json:"critical"`
+	Unknown   int `json:"unknown"`
+	Suspended int `json:"suspended"`
+}
+
+// InventoryRegion is a region's share of the account.
+type InventoryRegion struct {
+	Region string `json:"region"`
+	Count  int    `json:"count"`
+	Types  int    `json:"types"`
+}
+
+// CloudInventory is the Inventory Dashboard for one account.
+type CloudInventory struct {
+	AccountID   string `json:"account_id"`
+	AccountName string `json:"account_name"`
+	Provider    string `json:"provider"`
+
+	Monitored int `json:"monitored"`
+	// Discovered and Ignored come from the last collection, so the dashboard can
+	// show what is monitored against what exists. A monitoring tool that only
+	// reports on what it watches cannot tell you what it is missing.
+	Discovered    int               `json:"discovered"`
+	Ignored       int               `json:"ignored"`
+	UnmappedTotal int               `json:"unmapped_total"`
+	Unmapped      []UnmappedType    `json:"unmapped,omitempty"`
+	LastRunAt     *time.Time        `json:"last_run_at"`
+	Types         []InventoryType   `json:"types"`
+	Regions       []InventoryRegion `json:"regions"`
 }

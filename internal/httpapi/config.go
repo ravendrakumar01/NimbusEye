@@ -25,6 +25,7 @@ func (s *Server) registerConfigRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/discovered", s.listDiscovered)
 	mux.HandleFunc("GET /api/v1/reports/health-trend", s.reportHealthTrend)
 	mux.HandleFunc("POST /api/v1/monitors/bulk", s.bulkAction)
+	mux.HandleFunc("GET /api/v1/cloud-accounts/{id}/inventory", s.cloudInventory)
 }
 
 func (s *Server) config(w http.ResponseWriter) (store.ConfigStore, bool) {
@@ -199,4 +200,18 @@ func (s *Server) bulkAction(w http.ResponseWriter, r *http.Request) {
 		"requested": res.Requested, "applied": res.Applied, "skipped": len(res.Skipped),
 	})
 	writeJSON(w, http.StatusOK, res)
+}
+
+// cloudInventory backs the Cloud section's Inventory Dashboard.
+func (s *Server) cloudInventory(w http.ResponseWriter, r *http.Request) {
+	c, ok := s.config(w)
+	if !ok {
+		return
+	}
+	inv, err := c.CloudInventory(r.Context(), r.PathValue("id"))
+	if err != nil {
+		s.adminError(w, "cloud inventory", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, inv)
 }

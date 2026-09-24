@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"nimbuseye/internal/catalog"
 	"nimbuseye/internal/store"
 )
 
@@ -522,4 +523,118 @@ func (s *Store) BulkAction(ctx context.Context, in store.BulkActionInput) (store
 		res.Skipped = nil
 	}
 	return res, err
+}
+
+/* -------------------------------------------------------------------------- */
+/* Cloud inventory                                                             */
+/* -------------------------------------------------------------------------- */
+
+// CloudInventory answers "what is in this account, and what shape is it in".
+//
+// Deliberately reports monitored against discovered, not just monitored. A
+// dashboard that counts only what it watches cannot tell you what it is missing,
+// and on this tenancy the gap is the interesting part: fifteen thousand objects
+// found, a hundred and fifty monitored, and eleven types that are neither watched
+// nor deliberately ignored.
+func (s *Store) CloudInventory(ctx context.Context, accountID string) (store.CloudInventory, error) {
+	out := store.CloudInventory{
+		AccountID: accountID,
+		Types:     []store.InventoryType{},
+		Regions:   []store.InventoryRegion{},
+	}
+
+	err := s.withTx(ctx, func(tx pgx.Tx) error {
+		var raw []byte
+		if err := tx.QueryRow(ctx, `
+			SELECT display_name, provider, discovered_total, ignored_total,
+			       last_discovery_at, unmapped_types
+			FROM cloud_accounts WHERE id = $1::uuid`, accountID).
+			Scan(&out.AccountName, &out.Provider, &out.Discovered, &out.Ignored,
+				&out.LastRunAt, &raw); err != nil {
+			if isNoRowsErr(err) {
+				return ErrNotFound
+			}
+			return err
+		}
+		counts := map[string]int{}
+		if len(raw) > 0 {
+			_ = json.Unmarshal(raw, &counts)
+		}
+		for t, n := range counts {
+			out.Unmapped = append(out.Unmapped, store.UnmappedType{ProviderType: t, Count: n})
+			out.UnmappedTotal += n
+		}
+		sort.Slice(out.Unmapped, func(i, j int) bool {
+			return out.Unmapped[i].Count > out.Unmapped[j].Count
+		})
+
+		// Footprint and health per type in one pass. Status counts sit beside the
+		// total because forty resources with nine unknown is a different situation
+		// from forty healthy ones, and a bare count hides that.
+		rows, err := tx.Query(ctx, `
+			SELECT r.resource_type,
+			       count(*)::int,
+			       coalesce(array_agg(DISTINCT r.region) FILTER (WHERE r.region IS NOT NULL), '{}'),
+			       count(*) FILTER (WHERE r.status = 'up')::int,
+			       count(*) FILTER (WHERE r.status = 'down')::int,
+			       count(*) FILTER (WHERE r.status = 'trouble')::int,
+			       count(*) FILTER (WHERE r.status = 'critical')::int,
+			       count(*) FILTER (WHERE r.status = 'unknown')::int,
+			       count(*) FILTER (WHERE r.status = 'suspended')::int
+			FROM resources r
+			WHERE r.cloud_account_id = $1::uuid AND r.deleted_at IS NULL
+			GROUP BY r.resource_type`, accountID)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var t store.InventoryType
+			if err := rows.Scan(&t.Code, &t.Count, &t.Regions, &t.Up, &t.Down,
+				&t.Trouble, &t.Critical, &t.Unknown, &t.Suspended); err != nil {
+				return err
+			}
+			t.DisplayName, _ = typeMeta(t.Code)
+			if ct, ok := catalog.Get(t.Code); ok {
+				t.Category = ct.Category
+			}
+			out.Monitored += t.Count
+			out.Types = append(out.Types, t)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+
+		regions, err := tx.Query(ctx, `
+			SELECT coalesce(r.region,'unknown'), count(*)::int,
+			       count(DISTINCT r.resource_type)::int
+			FROM resources r
+			WHERE r.cloud_account_id = $1::uuid AND r.deleted_at IS NULL
+			GROUP BY 1 ORDER BY 2 DESC`, accountID)
+		if err != nil {
+			return err
+		}
+		defer regions.Close()
+		for regions.Next() {
+			var rg store.InventoryRegion
+			if err := regions.Scan(&rg.Region, &rg.Count, &rg.Types); err != nil {
+				return err
+			}
+			out.Regions = append(out.Regions, rg)
+		}
+		return regions.Err()
+	})
+	if err != nil {
+		return out, err
+	}
+
+	// Largest footprint first: an inventory is read to find where the estate is,
+	// and alphabetical order buries that.
+	sort.Slice(out.Types, func(i, j int) bool {
+		if out.Types[i].Count != out.Types[j].Count {
+			return out.Types[i].Count > out.Types[j].Count
+		}
+		return out.Types[i].DisplayName < out.Types[j].DisplayName
+	})
+	return out, nil
 }

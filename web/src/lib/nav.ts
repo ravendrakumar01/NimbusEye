@@ -96,7 +96,7 @@ export const RAIL: RailSection[] = [
       // lists browser-based checks too; those need a headless browser fleet, which
       // is infrastructure rather than code, so they are absent instead of greyed.
       { label: "Discovered Resources", to: "/discovered" },
-      { label: "Website", to: "/add-monitor?type=WEB_HTTP", add: true },
+      { label: "Website", to: "/web?type=WEB_HTTP", add: true },
       { label: "REST API", to: "/web?type=WEB_REST_API" },
       { label: "Port (Custom Protocol)", to: "/web?type=WEB_PORT" },
       { label: "DNS Server", to: "/web?type=WEB_DNS" },
@@ -127,7 +127,16 @@ export const RAIL: RailSection[] = [
       { key: "oci", label: "OCI" },
       { key: "more", label: "More" },
     ],
-    items: [],
+    items: [
+      // The reference console lists Topology View, Infrastructure Dashboard,
+      // Guidance Report, Business View and a Zia anomaly view here. None of them has
+      // an implementation, so they are absent rather than greyed out; the README
+      // records them.
+      { label: "Service View", to: "/cloud/services" },
+      { label: "Inventory Dashboard", to: "/cloud/inventory" },
+      { label: "Cloud Resources", to: "/cloud" },
+      { label: "Outages", to: "/outages" },
+    ],
   },
   {
     key: "reports",

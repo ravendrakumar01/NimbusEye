@@ -24,6 +24,7 @@ import { AlertLogs } from "./pages/AlertLogs";
 import { MonitorGroups } from "./pages/MonitorGroups";
 import { BusinessHours, Tags } from "./pages/AdminConfig";
 import { Discovered, BulkAction } from "./pages/Discovered";
+import { CloudInventory, CloudServices } from "./pages/CloudInventory";
 import { AdminThresholds } from "./pages/AdminThresholds";
 import { AdminNotifications } from "./pages/AdminNotifications";
 import { AdminChannels } from "./pages/AdminChannels";
@@ -147,8 +148,13 @@ export default function App() {
             <MonitorStatus providers={["oci", "aws", "azure", "gcp"]} providerFromUrl />
           }
         />
+        <Route path="cloud/inventory" element={<CloudInventory />} />
+        <Route path="cloud/services" element={<CloudServices />} />
         <Route path="web" element={<MonitorStatus providers={["synthetic"]} />} />
-        <Route path="kubernetes" element={<MonitorStatus providers={["k8s"]} />} />
+        <Route
+          path="kubernetes"
+          element={<MonitorStatus categories={["kubernetes", "container"]} title="Clusters" />}
+        />
 
         <Route path="alarms" element={<Alarms />} />
 

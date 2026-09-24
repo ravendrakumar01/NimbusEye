@@ -58,6 +58,15 @@ export interface MonitorStatusProps {
   title?: string;
   /** Lets the Cloud section drive the provider from the URL instead of a prop. */
   providerFromUrl?: boolean;
+  /**
+   * Restricts the page to these catalog categories.
+   *
+   * Kubernetes needs this rather than a provider filter: OKE clusters are
+   * discovered through OCI and carry provider "oci", so filtering the page by
+   * provider "k8s" matched nothing and the section showed an empty list while a
+   * cluster sat in alarm. The thing they have in common is the category.
+   */
+  categories?: string[];
 }
 
 const PAGE_SIZE = 25;
@@ -66,6 +75,7 @@ export function MonitorStatus({
   providers,
   title = "Monitor Status",
   providerFromUrl = false,
+  categories,
 }: MonitorStatusProps) {
   const [params, setParams] = useSearchParams();
 
@@ -132,6 +142,7 @@ export function MonitorStatus({
       api.resources({
         q: q || undefined,
         provider: scope && scope.length ? scope : undefined,
+        category: categories && categories.length ? categories : undefined,
         type: csv("type"),
         status: csv("status") as Status[] | undefined,
         region: csv("region"),
@@ -143,6 +154,7 @@ export function MonitorStatus({
     [
       q,
       scope?.join(","),
+      categories?.join(","),
       params.get("type"),
       params.get("status"),
       params.get("region"),
