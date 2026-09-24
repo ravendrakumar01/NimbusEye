@@ -25,6 +25,7 @@ import { MonitorGroups } from "./pages/MonitorGroups";
 import { BusinessHours, Tags } from "./pages/AdminConfig";
 import { Discovered, BulkAction } from "./pages/Discovered";
 import { CloudInventory, CloudServices } from "./pages/CloudInventory";
+import { Kubernetes } from "./pages/Kubernetes";
 import { AdminThresholds } from "./pages/AdminThresholds";
 import { AdminNotifications } from "./pages/AdminNotifications";
 import { AdminChannels } from "./pages/AdminChannels";
@@ -151,10 +152,7 @@ export default function App() {
         <Route path="cloud/inventory" element={<CloudInventory />} />
         <Route path="cloud/services" element={<CloudServices />} />
         <Route path="web" element={<MonitorStatus providers={["synthetic"]} />} />
-        <Route
-          path="kubernetes"
-          element={<MonitorStatus categories={["kubernetes", "container"]} title="Clusters" />}
-        />
+        <Route path="kubernetes" element={<Kubernetes />} />
 
         <Route path="alarms" element={<Alarms />} />
 

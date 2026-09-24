@@ -239,6 +239,48 @@ func RunOCI(ctx context.Context, acct OCIAccount, sink Sink, log *slog.Logger, w
 			log.Debug("load balancer detail", "enriched", enriched, "failed", failed)
 		}
 
+		// Kubernetes clusters get their version, node pools and node health. None of
+		// that comes from Monitoring, and without it the Kubernetes section is a
+		// monitor list with a status dot rather than a view of the clusters.
+		kEnriched, kFailed := 0, 0
+		for i := range all {
+			if all[i].ResourceType != "OCI_OKE_CLUSTER" || all[i].Region != region {
+				continue
+			}
+			compID, _ := all[i].Attributes["compartment_id"].(string)
+			d, err := client.ClusterDetails(ctx, all[i].NativeID, compID)
+			if err != nil {
+				kFailed++
+				continue
+			}
+			if all[i].Attributes == nil {
+				all[i].Attributes = map[string]any{}
+			}
+			if d.Version != "" {
+				all[i].Attributes["k8s_version"] = d.Version
+			}
+			if len(d.AvailableUpgrades) > 0 {
+				all[i].Attributes["available_upgrades"] = d.AvailableUpgrades
+			}
+			if d.Endpoint != "" {
+				all[i].Attributes["endpoint"] = d.Endpoint
+			}
+			if d.PrivateEndpoint != "" {
+				all[i].Attributes["private_endpoint"] = d.PrivateEndpoint
+			}
+			if len(d.NodePools) > 0 {
+				all[i].Attributes["node_pools"] = d.NodePools
+			}
+			all[i].Attributes["total_nodes"] = d.TotalNodes
+			all[i].Attributes["active_nodes"] = d.ActiveNodes
+			all[i].Attributes["pending_nodes"] = d.PendingNodes
+			all[i].Attributes["unhealthy_nodes"] = d.UnhealthyNodes
+			kEnriched++
+		}
+		if kEnriched > 0 || kFailed > 0 {
+			log.Debug("cluster detail", "enriched", kEnriched, "failed", kFailed)
+		}
+
 		if withMetrics {
 			n, reporting, err := collectOCIMetrics(ctx, client, all, compartmentOf, nameOf, acct.TenancyOCID, acct.MetricWindow, sink, log)
 			if err != nil {

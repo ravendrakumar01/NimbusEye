@@ -112,6 +112,7 @@ export const RAIL: RailSection[] = [
     to: "/kubernetes",
     items: [
       { label: "Clusters", to: "/kubernetes" },
+      { label: "All Kubernetes Resources", to: "/cloud?provider=oci&type=OCI_OKE_CLUSTER" },
       { label: "What is monitored", to: "/kubernetes/help" },
     ],
   },

@@ -452,18 +452,7 @@
         "unit": "count",
         "provider_metric": "APIServerRequestCount",
         "namespace": "oci_oke",
-        "statistic": "sum",
-        "trouble": null,
-        "critical": null,
-        "higher_is_worse": true
-      },
-      {
-        "key": "etcd_object_count",
-        "label": "etcd Objects",
-        "unit": "count",
-        "provider_metric": "ETCDObjectCount",
-        "namespace": "oci_oke",
-        "statistic": "max",
+        "statistic": "rate",
         "trouble": null,
         "critical": null,
         "higher_is_worse": true

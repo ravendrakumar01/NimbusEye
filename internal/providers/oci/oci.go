@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/oracle/oci-go-sdk/v65/common"
+	"github.com/oracle/oci-go-sdk/v65/containerengine"
 	"github.com/oracle/oci-go-sdk/v65/identity"
 	"github.com/oracle/oci-go-sdk/v65/loadbalancer"
 	"github.com/oracle/oci-go-sdk/v65/monitoring"
@@ -64,6 +65,9 @@ type Client struct {
 	// lb answers the questions Monitoring cannot: which address this load balancer
 	// serves, and which backend is actually down.
 	lb *loadbalancer.LoadBalancerClient
+	// ce answers the Kubernetes questions Monitoring cannot: which version, which
+	// node pools, and whether any node has failed to join.
+	ce *containerengine.ContainerEngineClient
 
 	// gate paces metric reads. OCI rate-limits SummarizeMetricsData per tenancy,
 	// and exceeding it returns 429 per request rather than slowing us down.
@@ -207,6 +211,11 @@ func New(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("oci: load balancer client: %w", err)
 	}
 
+	cec, err := containerengine.NewContainerEngineClientWithConfigurationProvider(provider)
+	if err != nil {
+		return nil, fmt.Errorf("oci: container engine client: %w", err)
+	}
+
 	idn, err := identity.NewIdentityClientWithConfigurationProvider(provider)
 	if err != nil {
 		return nil, fmt.Errorf("oci: identity client: %w", err)
@@ -218,6 +227,7 @@ func New(cfg Config) (*Client, error) {
 		monitor:  mon,
 		identity: idn,
 		lb:       &lbc,
+		ce:       &cec,
 		gate:     newLimiter(cfg.MetricsPerSecond),
 	}, nil
 }
